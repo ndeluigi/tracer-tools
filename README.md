@@ -12,16 +12,36 @@ This tool provides three integrated workflows for stream hydrological measuremen
 
 The tool includes temperature correction for Rhodamine WT, effective width calculations, and sampling strategy recommendations for breakthrough curve analysis.
 
+## Versions
+
+This repository contains two versions of the application:
+
+### app.R - Standard Version
+- Basic discharge calculations (Q_salt, Q_rhoWT, Injections)
+- Uniform sampling strategy
+- All core functionality
+
+### app2.R - Enhanced Version with Mobile Field Timer
+- **Non-uniform sampling strategy**: Denser sampling around peak, sparser at edges
+- **QR code generation**: Creates QR codes with sampling schedules
+- **Mobile field timer**: Standalone HTML app for Android/iOS
+- **Offline field use**: No internet required during sampling
+- All features from standard version
+
 ## Installation
 
 ### Prerequisites
 
 You need R installed on your system. Download from [CRAN](https://cran.r-project.org/).
 
-Then install the required packages:
-
+**For app.R:**
 ```r
 install.packages(c("shiny", "DT", "ggplot2", "dplyr"))
+```
+
+**For app2.R (enhanced version):**
+```r
+install.packages(c("shiny", "DT", "ggplot2", "dplyr", "qrcode", "jsonlite"))
 ```
 
 ## Running the App
@@ -104,6 +124,35 @@ Configure global parameters:
 
 ### Download Report
 Click **"Download Report (CSV)"** at any time to save your results and complete time series data.
+
+### Workflow 4: Mobile Field Timer (app2.R only)
+
+**For field sampling with real-time guidance:**
+
+1. Complete the **Injections** workflow in app2.R to calculate tracer masses
+2. Navigate to the **Sampling** tab
+3. You'll see:
+   - A QR code containing your sampling schedule
+   - A download button for the mobile timer app
+4. **On your phone:**
+   - Download `field_timer.html` (or open it directly if already downloaded)
+   - Open the HTML file in your mobile browser
+   - Tap "Scan QR Code" and scan the QR code from the R app
+5. **In the field:**
+   - Review the loaded sampling schedule
+   - Tap "Start Timer" when you inject the tracer
+   - The app will count down to each sampling time
+   - Visual and audio alerts when it's time to sample
+   - Mark each sample as taken
+   - Works completely offline!
+
+**Mobile Timer Features:**
+- Real-time countdown to next sample
+- Audio beeps at 10 seconds and when sampling time arrives
+- Visual alerts (color changes) when approaching sample time
+- Progress tracking
+- Screen stays awake during sampling
+- No internet connection required
 
 ## Methodology
 

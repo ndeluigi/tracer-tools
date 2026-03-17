@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Field Sampling Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            color: #333;
+        }
+        
+        .container {
+            flex: 1;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .timer-display {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+        
+        .timer-large {
+            font-size: 72px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .timer-label {
+            font-size: 16px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .sample-info {
+            background: #f0fdf4;
+            border-left: 4px solid #10b981;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .sample-info.next {
+            background: #fef3c7;
+            border-left-color: #f59e0b;
+        }
+        
+        .sample-info.alert {
+            background: #fee2e2;
+            border-left-color: #ef4444;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .info-value {
+            font-weight: bold;
+            color: #111;
+        }
+        
+        #qr-reader {
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .schedule-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        
+        .schedule-item {
+            padding: 12px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .schedule-item.completed {
+            background: #d1fae5;
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        
+        .schedule-item.current {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .status-bar {
+            background: white;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Setup Screen -->
+        <div id="setupScreen" class="card">
+            <h1>🔬 Field Sampling Timer</h1>
+            <p class="subtitle">Scan QR code to load sampling schedule</p>
+            
+            <button class="btn btn-primary" onclick="startQRScanner()">📷 Scan QR Code</button>
+            
+            <div id="qrReaderContainer" class="hidden">
+                <div id="qr-reader"></div>
+                <button class="btn btn-danger" onclick="stopQRScanner()" style="margin-top: 15px;">Cancel</button>
+            </div>
+            
+            <div id="schedulePreview" class="hidden">
+                <h3 style="margin-top: 30px; color: #667eea;">Loaded Schedule</h3>
+                <div class="sample-info">
+                    <div class="info-row">
+                        <span class="info-label">Total Samples:</span>
+                        <span class="info-value" id="totalSamples">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Duration:</span>
+                        <span class="info-value" id="duration">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Loaded:</span>
+                        <span class="info-value" id="loadTime">-</span>
+                    </div>
+                </div>
+                
+                <div class="schedule-list" id="scheduleList"></div>
+                
+                <button class="btn btn-success" onclick="startTimer()">▶️ Start Timer</button>
+                <button class="btn btn-warning" onclick="resetApp()">🔄 Load New Schedule</button>
+            </div>
+        </div>
+        
+        <!-- Timer Screen -->
+        <div id="timerScreen" class="card hidden">
+            <h1>⏱️ Sampling in Progress</h1>
+            
+            <div class="timer-display">
+                <div class="timer-label">Time Until Next Sample</div>
+                <div class="timer-large" id="countdown">--:--</div>
+                <div class="timer-label" id="countdownLabel">Waiting to start...</div>
+            </div>
+            
+            <div id="currentSampleInfo" class="sample-info">
+                <div class="info-row">
+                    <span class="info-label">Current Sample:</span>
+                    <span class="info-value" id="currentSample">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Next Sample At:</span>
+                    <span class="info-value" id="nextSampleTime">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Elapsed Time:</span>
+                    <span class="info-value" id="elapsedTime">-</span>
+                </div>
+            </div>
+            
+            <button class="btn btn-success" id="sampleBtn" onclick="markSampleTaken()" disabled>✓ Sample Taken</button>
+            <button class="btn btn-danger" onclick="stopTimer()">⏹️ Stop Timer</button>
+        </div>
+    </div>
+    
+    <div class="status-bar">
+        <div id="statusText">Ready to scan QR code</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <!-- QR Code Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <script>
+        let samplingSchedule = null;
+        let timerStartTime = null;
+        let timerInterval = null;
+        let currentSampleIndex = 0;
+        let html5QrCode = null;
+        let audioContext = null;
+        
+        // Initialize audio context for beep
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        
+        // Play beep sound
+        function playBeep(duration = 200, frequency = 800) {
+            initAudio();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration / 1000);
+        }
+        
+        // Start QR scanner
+        function startQRScanner() {
+            document.getElementById('qrReaderContainer').classList.remove('hidden');
+            
+            html5QrCode = new Html5Qrcode("qr-reader");
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: 250 },
+                onScanSuccess,
+                onScanError
+            ).catch(err => {
+                alert("Error starting camera: " + err);
+            });
+        }
+        
+        // Stop QR scanner
+        function stopQRScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('qrReaderContainer').classList.add('hidden');
+                });
+            }
+        }
+        
+        // Handle successful QR scan
+        function onScanSuccess(decodedText) {
+            try {
+                samplingSchedule = JSON.parse(decodedText);
+                stopQRScanner();
+                displaySchedule();
+                playBeep(100, 1000);
+            } catch (e) {
+                alert("Invalid QR code format");
+            }
+        }
+        
+        function onScanError(err) {
+            // Ignore scan errors (they happen frequently)
+        }
+        
+        // Display loaded schedule
+        function displaySchedule() {
+            document.getElementById('totalSamples').textContent = samplingSchedule.total_samples;
+            document.getElementById('duration').textContent = formatTime(samplingSchedule.end_time - samplingSchedule.start_time);
+            document.getElementById('loadTime').textContent = samplingSchedule.timestamp;
+            
+            const scheduleList = document.getElementById('scheduleList');
+            scheduleList.innerHTML = '';
+            
+            samplingSchedule.sampling_times.forEach((time, index) => {
+                const item = document.createElement('div');
+                item.className = 'schedule-item';
+                item.innerHTML = `
+                    <span>Sample ${index + 1}</span>
+                    <span>${formatTime(time)}</span>
+                `;
+                scheduleList.appendChild(item);
+            });
+            
+            document.getElementById('schedulePreview').classList.remove('hidden');
+            updateStatus('Schedule loaded. Ready to start!');
+        }
+        
+        // Start the timer
+        function startTimer() {
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('timerScreen').classList.remove('hidden');
+            
+            timerStartTime = Date.now();
+            currentSampleIndex = 0;
+            
+            updateTimer();
+            timerInterval = setInterval(updateTimer, 100);
+            
+            updateStatus('Timer started! Good luck with sampling.');
+            playBeep(100, 600);
+        }
+        
+        // Update timer display
+        function updateTimer() {
+            const elapsed = (Date.now() - timerStartTime) / 1000; // seconds
+            
+            document.getElementById('elapsedTime').textContent = formatTime(elapsed);
+            
+            // Find next sample
+            let nextSampleIndex = currentSampleIndex;
+            while (nextSampleIndex < samplingSchedule.sampling_times.length && 
+                   samplingSchedule.sampling_times[nextSampleIndex] <= elapsed) {
+                nextSampleIndex++;
+            }
+            
+            if (nextSampleIndex >= samplingSchedule.sampling_times.length) {
+                // All samples done
+                document.getElementById('countdown').textContent = '00:00';
+                document.getElementById('countdownLabel').textContent = 'All samples complete!';
+                document.getElementById('currentSample').textContent = `${samplingSchedule.total_samples} / ${samplingSchedule.total_samples}`;
+                document.getElementById('nextSampleTime').textContent = 'Complete';
+                document.getElementById('sampleBtn').disabled = true;
+                document.getElementById('currentSampleInfo').className = 'sample-info';
+                updateProgress(100);
+                clearInterval(timerInterval);
+                playBeep(300, 1200);
+                return;
+            }
+            
+            const nextSampleTime = samplingSchedule.sampling_times[nextSampleIndex];
+            const timeUntilNext = nextSampleTime - elapsed;
+            
+            document.getElementById('currentSample').textContent = `${nextSampleIndex + 1} / ${samplingSchedule.total_samples}`;
+            document.getElementById('nextSampleTime').textContent = formatTime(nextSampleTime);
+            
+            // Update countdown
+            if (timeUntilNext > 0) {
+                document.getElementById('countdown').textContent = formatCountdown(timeUntilNext);
+                document.getElementById('countdownLabel').textContent = `Sample ${nextSampleIndex + 1} coming up`;
+                
+                // Alert when close
+                if (timeUntilNext <= 10 && timeUntilNext > 9.9) {
+                    document.getElementById('currentSampleInfo').className = 'sample-info alert';
+                    playBeep(100, 1000);
+                } else if (timeUntilNext <= 5) {
+                    document.getElementById('currentSampleInfo').className = 'sample-info alert';
+                } else if (timeUntilNext <= 30) {
+                    document.getElementById('currentSampleInfo').className = 'sample-info next';
+                } else {
+                    document.getElementById('currentSampleInfo').className = 'sample-info';
+                }
+                
+                document.getElementById('sampleBtn').disabled = timeUntilNext > 5;
+            } else {
+                document.getElementById('countdown').textContent = 'NOW!';
+                document.getElementById('countdownLabel').textContent = `TAKE SAMPLE ${nextSampleIndex + 1}`;
+                document.getElementById('currentSampleInfo').className = 'sample-info alert';
+                document.getElementById('sampleBtn').disabled = false;
+                
+                // Beep every 2 seconds when it's time
+                if (Math.floor(elapsed) % 2 === 0 && Math.floor(elapsed * 10) % 10 === 0) {
+                    playBeep(200, 1200);
+                }
+            }
+            
+            // Update progress
+            const progress = (nextSampleIndex / samplingSchedule.total_samples) * 100;
+            updateProgress(progress);
+        }
+        
+        // Mark sample as taken
+        function markSampleTaken() {
+            currentSampleIndex++;
+            playBeep(100, 800);
+            updateStatus(`Sample ${currentSampleIndex} taken!`);
+        }
+        
+        // Stop timer
+        function stopTimer() {
+            if (confirm('Are you sure you want to stop the timer?')) {
+                clearInterval(timerInterval);
+                document.getElementById('timerScreen').classList.add('hidden');
+                document.getElementById('setupScreen').classList.remove('hidden');
+                updateStatus('Timer stopped');
+            }
+        }
+        
+        // Reset app
+        function resetApp() {
+            samplingSchedule = null;
+            document.getElementById('schedulePreview').classList.add('hidden');
+            updateStatus('Ready to scan QR code');
+            updateProgress(0);
+        }
+        
+        // Format time in MM:SS or HH:MM:SS
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            
+            if (h > 0) {
+                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            } else {
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            }
+        }
+        
+        // Format countdown
+        function formatCountdown(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        // Update status bar
+        function updateStatus(text) {
+            document.getElementById('statusText').textContent = text;
+        }
+        
+        // Update progress bar
+        function updateProgress(percent) {
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+        
+        // Keep screen awake
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.log('Wake lock error:', err);
+            }
+        }
+        
+        // Request wake lock when timer starts
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+    </script>
+</body>
+</html>
