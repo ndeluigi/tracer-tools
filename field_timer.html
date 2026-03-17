@@ -227,10 +227,23 @@
             <p class="subtitle">Scan QR code to load sampling schedule</p>
             
             <button class="btn btn-primary" onclick="startQRScanner()">📷 Scan QR Code</button>
+            <button class="btn btn-warning" onclick="showManualInput()">⌨️ Enter Schedule Manually</button>
             
             <div id="qrReaderContainer" class="hidden">
                 <div id="qr-reader"></div>
                 <button class="btn btn-danger" onclick="stopQRScanner()" style="margin-top: 15px;">Cancel</button>
+            </div>
+            
+            <div id="manualInputContainer" class="hidden">
+                <h3 style="margin-top: 20px; color: #667eea;">Manual Input</h3>
+                <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
+                    Copy the JSON data from the R app and paste it below:
+                </p>
+                <textarea id="manualJsonInput" 
+                          style="width: 100%; min-height: 150px; padding: 10px; border: 2px solid #667eea; border-radius: 8px; font-family: monospace; font-size: 12px;"
+                          placeholder='{"site":"Field Sampling","total_samples":13,"sampling_times":[...]}'></textarea>
+                <button class="btn btn-success" onclick="loadManualSchedule()" style="margin-top: 10px;">Load Schedule</button>
+                <button class="btn btn-danger" onclick="hideManualInput()">Cancel</button>
             </div>
             
             <div id="schedulePreview" class="hidden">
@@ -331,9 +344,40 @@
             oscillator.stop(audioContext.currentTime + duration / 1000);
         }
         
+        // Show manual input
+        function showManualInput() {
+            document.getElementById('manualInputContainer').classList.remove('hidden');
+            document.getElementById('qrReaderContainer').classList.add('hidden');
+        }
+        
+        // Hide manual input
+        function hideManualInput() {
+            document.getElementById('manualInputContainer').classList.add('hidden');
+            document.getElementById('manualJsonInput').value = '';
+        }
+        
+        // Load schedule from manual input
+        function loadManualSchedule() {
+            const jsonText = document.getElementById('manualJsonInput').value.trim();
+            if (!jsonText) {
+                alert('Please paste the JSON schedule data');
+                return;
+            }
+            
+            try {
+                samplingSchedule = JSON.parse(jsonText);
+                hideManualInput();
+                displaySchedule();
+                playBeep(100, 1000);
+            } catch (e) {
+                alert('Invalid JSON format. Please copy the exact JSON data from the R app.\n\nError: ' + e.message);
+            }
+        }
+        
         // Start QR scanner
         function startQRScanner() {
             document.getElementById('qrReaderContainer').classList.remove('hidden');
+            document.getElementById('manualInputContainer').classList.add('hidden');
             
             html5QrCode = new Html5Qrcode("qr-reader");
             html5QrCode.start(
@@ -342,7 +386,27 @@
                 onScanSuccess,
                 onScanError
             ).catch(err => {
-                alert("Error starting camera: " + err);
+                document.getElementById('qrReaderContainer').classList.add('hidden');
+                
+                // Provide helpful error message
+                let errorMsg = "Camera Error\n\n";
+                if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
+                    errorMsg += "Camera permission was denied.\n\n";
+                    errorMsg += "To enable camera:\n";
+                    errorMsg += "1. Tap the lock/info icon in the address bar\n";
+                    errorMsg += "2. Find 'Camera' permission\n";
+                    errorMsg += "3. Change to 'Allow'\n";
+                    errorMsg += "4. Reload the page\n\n";
+                    errorMsg += "OR use 'Enter Schedule Manually' button instead.";
+                } else if (err.toString().includes('NotFoundError')) {
+                    errorMsg += "No camera found on this device.\n\n";
+                    errorMsg += "Please use 'Enter Schedule Manually' button instead.";
+                } else {
+                    errorMsg += err + "\n\n";
+                    errorMsg += "Try using 'Enter Schedule Manually' button instead.";
+                }
+                
+                alert(errorMsg);
             });
         }
         

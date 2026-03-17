@@ -740,11 +740,23 @@ server <- function(input, output, session) {
                          verbatimTextOutput("sampling_frequency"),
                          hr(),
                          h4("Mobile Field Timer"),
-                         p("Scan this QR code with your phone to load the sampling schedule into the mobile timer app."),
+                         p("Choose one of these methods to load the schedule into the mobile timer app:"),
+                         
+                         h5("Method 1: QR Code (Recommended)"),
+                         p("Scan this QR code with your phone's camera:"),
                          plotOutput("qr_code_plot", height = "300px", width = "300px"),
+                         
+                         hr(),
+                         
+                         h5("Method 2: Manual Copy-Paste"),
+                         p("If camera doesn't work, copy this JSON data and paste it into the mobile app:"),
+                         verbatimTextOutput("json_schedule_text"),
+                         helpText("Tap 'Enter Schedule Manually' in the mobile app, then paste this text."),
+                         
+                         hr(),
+                         
                          downloadButton("download_timer_html", "Download Mobile Timer App"),
                          hr(),
-                         helpText("The QR code contains your sampling schedule. Open field_timer.html on your phone and scan the code."),
                          helpText("Red vertical bars on plots show recommended sampling times."),
                          helpText("Configure sampling strategy in the Settings tab (left sidebar).")
                 ),
@@ -1168,6 +1180,26 @@ server <- function(input, output, session) {
     
     # Plot QR code
     plot(qr)
+  })
+  
+  # Display JSON schedule text for manual copy-paste
+  output$json_schedule_text <- renderText({
+    if (is.null(calc_results$sampling_times)) {
+      return("")
+    }
+    
+    # Create JSON data (same as QR code)
+    qr_data <- list(
+      site = "Field Sampling",
+      total_samples = length(calc_results$sampling_times),
+      sampling_times = as.numeric(calc_results$sampling_times),
+      start_time = as.numeric(calc_results$sampling_times[1]),
+      end_time = as.numeric(calc_results$sampling_times[length(calc_results$sampling_times)]),
+      timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    )
+    
+    # Convert to JSON string (pretty printed for readability)
+    jsonlite::toJSON(qr_data, auto_unbox = TRUE, pretty = FALSE)
   })
   
   # Download mobile timer HTML app
