@@ -235,13 +235,18 @@
             </div>
             
             <div id="manualInputContainer" class="hidden">
-                <h3 style="margin-top: 20px; color: #667eea;">Manual Input</h3>
+                <h3 style="margin-top: 20px; color: #667eea;">Enter Sampling Times</h3>
                 <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
-                    Copy the JSON data from the R app and paste it below:
+                    Enter sampling times in seconds, one per line:
                 </p>
-                <textarea id="manualJsonInput" 
-                          style="width: 100%; min-height: 150px; padding: 10px; border: 2px solid #667eea; border-radius: 8px; font-family: monospace; font-size: 12px;"
-                          placeholder='{"site":"Field Sampling","total_samples":13,"sampling_times":[...]}'></textarea>
+                <textarea id="manualTimesInput" 
+                          style="width: 100%; min-height: 200px; padding: 12px; border: 2px solid #667eea; border-radius: 8px; font-family: monospace; font-size: 18px; line-height: 1.6;"
+                          placeholder="10
+40
+55
+69
+90
+120"></textarea>
                 <button class="btn btn-success" onclick="loadManualSchedule()" style="margin-top: 10px;">Load Schedule</button>
                 <button class="btn btn-danger" onclick="hideManualInput()">Cancel</button>
             </div>
@@ -353,25 +358,42 @@
         // Hide manual input
         function hideManualInput() {
             document.getElementById('manualInputContainer').classList.add('hidden');
-            document.getElementById('manualJsonInput').value = '';
+            document.getElementById('manualTimesInput').value = '';
         }
         
         // Load schedule from manual input
         function loadManualSchedule() {
-            const jsonText = document.getElementById('manualJsonInput').value.trim();
-            if (!jsonText) {
-                alert('Please paste the JSON schedule data');
+            const text = document.getElementById('manualTimesInput').value.trim();
+            if (!text) {
+                alert('Please enter sampling times (one per line)');
                 return;
             }
             
-            try {
-                samplingSchedule = JSON.parse(jsonText);
-                hideManualInput();
-                displaySchedule();
-                playBeep(100, 1000);
-            } catch (e) {
-                alert('Invalid JSON format. Please copy the exact JSON data from the R app.\n\nError: ' + e.message);
+            // Parse lines as numbers
+            const times = text.split(/[\n,\s]+/)
+                .map(s => s.trim())
+                .filter(s => s !== '')
+                .map(Number)
+                .filter(n => !isNaN(n))
+                .sort((a, b) => a - b);
+            
+            if (times.length < 2) {
+                alert('Please enter at least 2 sampling times');
+                return;
             }
+            
+            samplingSchedule = {
+                site: 'Field Sampling',
+                total_samples: times.length,
+                sampling_times: times,
+                start_time: times[0],
+                end_time: times[times.length - 1],
+                timestamp: new Date().toLocaleString()
+            };
+            
+            hideManualInput();
+            displaySchedule();
+            playBeep(100, 1000);
         }
         
         // Start QR scanner

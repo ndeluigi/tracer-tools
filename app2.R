@@ -546,12 +546,14 @@ server <- function(input, output, session) {
     )
     calc_results$temp_correction_factor <- temp_correction_factor
     
-    # Calculate sampling times for breakthrough curve with NON-UNIFORM spacing
+    # Calculate sampling times using CONCENTRATION-WEIGHTED spacing
     # Strategy:
     #   - 1 sample at background (before breakthrough)
-    #   - 1 sample at tail (after breakthrough returns to background)
+    #   - 1 sample at tail (after breakthrough, background recovered)
     #   - 1 sample exactly at peak
-    #   - Remaining samples: denser around peak, sparser away from it
+    #   - Remaining samples placed where concentration is highest:
+    #     use cumulative sum of excess conductivity as CDF,
+    #     then sample at equal quantiles → more samples where signal is high
     threshold <- background + 0.5  # Small threshold above background
     excess_indices <- which(conductivity > threshold)
     
@@ -562,76 +564,63 @@ server <- function(input, output, session) {
       
       n_samples <- input$n_samples_breakthrough
       
-      # Reserve 3 fixed samples: background, peak, tail
-      # Background: 1 sample before breakthrough starts
+      # Fixed samples: background (before curve) and tail (after curve)
       bg_idx <- max(1, breakthrough_start_idx - 1)
-      # Tail: 1 sample after breakthrough ends (background recovered)
       tail_idx <- min(count_cond, breakthrough_end_idx + 1)
       
-      # Remaining samples to distribute around peak
+      # Concentration-weighted distribution for the remaining samples
       n_variable <- n_samples - 3  # subtract background, peak, tail
       
       if (n_variable > 0) {
-        # Split variable samples between rising limb (start->peak) and falling limb (peak->end)
-        n_rising <- round(n_variable * (peak_idx - breakthrough_start_idx) / 
-                            (breakthrough_end_idx - breakthrough_start_idx))
-        n_rising <- max(1, min(n_rising, n_variable - 1))  # at least 1 on each side
-        n_falling <- n_variable - n_rising
+        # Extract excess conductivity over the breakthrough window
+        bt_indices <- breakthrough_start_idx:breakthrough_end_idx
+        bt_excess <- pmax(excess_conductivity[bt_indices], 0)
         
-        # Rising limb: distribute from start to peak with density increasing toward peak
-        # Use power transformation: t^2 maps [0,1] -> [0,1] with more points near 1 (peak)
-        if (n_rising > 0) {
-          t_rising <- seq(0, 1, length.out = n_rising + 2)  # +2 to exclude start and peak
-          t_rising <- t_rising[2:(n_rising + 1)]  # remove endpoints (start and peak are fixed)
-          t_rising_transformed <- t_rising^2  # quadratic: denser near peak (t=1)
-          rising_indices <- round(breakthrough_start_idx + 
-                                    t_rising_transformed * (peak_idx - breakthrough_start_idx))
-        } else {
-          rising_indices <- integer(0)
+        # Build cumulative distribution from the concentration values
+        cum_conc <- cumsum(bt_excess)
+        cum_conc <- cum_conc / cum_conc[length(cum_conc)]  # normalize to [0, 1]
+        
+        # Sample at equal quantiles of the concentration CDF
+        # This places more samples where concentration is high
+        target_quantiles <- seq(0, 1, length.out = n_variable + 2)
+        target_quantiles <- target_quantiles[2:(n_variable + 1)]  # exclude 0 and 1 (bg and tail)
+        
+        # Find the index for each quantile
+        variable_indices <- integer(length(target_quantiles))
+        for (q_i in seq_along(target_quantiles)) {
+          # Find first index where CDF >= quantile
+          idx_in_window <- which(cum_conc >= target_quantiles[q_i])[1]
+          variable_indices[q_i] <- bt_indices[idx_in_window]
         }
         
-        # Falling limb: distribute from peak to end with density decreasing away from peak
-        # Use power transformation: 1-(1-t)^2 maps [0,1] -> [0,1] with more points near 0 (peak)
-        if (n_falling > 0) {
-          t_falling <- seq(0, 1, length.out = n_falling + 2)
-          t_falling <- t_falling[2:(n_falling + 1)]
-          t_falling_transformed <- 1 - (1 - t_falling)^2  # quadratic: denser near peak (t=0)
-          falling_indices <- round(peak_idx + 
-                                     t_falling_transformed * (breakthrough_end_idx - peak_idx))
-        } else {
-          falling_indices <- integer(0)
-        }
-        
-        # Combine all sample indices
-        sample_indices <- sort(unique(c(bg_idx, rising_indices, peak_idx, falling_indices, tail_idx)))
+        # Combine: background + concentration-weighted + peak + tail
+        sample_indices <- sort(unique(c(bg_idx, variable_indices, peak_idx, tail_idx)))
       } else {
-        # Not enough samples for variable distribution, just use fixed ones
         sample_indices <- sort(unique(c(bg_idx, peak_idx, tail_idx)))
       }
       
-      # Fill in if we lost samples due to duplicates (close indices merging)
+      # Fill in if we lost samples due to duplicates
       while (length(sample_indices) < n_samples && length(sample_indices) < count_cond) {
-        # Find largest gap nearest to peak
+        # Find gap with largest concentration area not yet sampled
         gaps <- diff(sample_indices)
-        # Weight gaps by proximity to peak (prefer filling gaps near peak)
-        gap_midpoints <- (sample_indices[-length(sample_indices)] + sample_indices[-1]) / 2
-        gap_distances <- abs(gap_midpoints - peak_idx) + 1  # +1 to avoid division by zero
-        gap_scores <- gaps / gap_distances  # large gap near peak = high score
-        best_gap_idx <- which.max(gap_scores)
+        gap_conc <- numeric(length(gaps))
+        for (g in seq_along(gaps)) {
+          seg <- sample_indices[g]:sample_indices[g + 1]
+          gap_conc[g] <- sum(pmax(excess_conductivity[seg], 0))
+        }
+        best_gap_idx <- which.max(gap_conc)
         new_idx <- round((sample_indices[best_gap_idx] + sample_indices[best_gap_idx + 1]) / 2)
-        if (new_idx %in% sample_indices) break  # avoid infinite loop
+        if (new_idx %in% sample_indices) break
         sample_indices <- sort(unique(c(sample_indices, new_idx)))
       }
       
-      # Trim if we have too many
+      # Trim if too many (keep bg, peak, tail; drop lowest-concentration ones)
       if (length(sample_indices) > n_samples) {
-        # Always keep bg, peak, tail; remove farthest from peak among the rest
         fixed <- c(bg_idx, peak_idx, tail_idx)
         variable <- setdiff(sample_indices, fixed)
-        distances <- abs(variable - peak_idx)
-        # Remove samples farthest from peak first
+        conc_at_var <- excess_conductivity[variable]
         n_to_remove <- length(sample_indices) - n_samples
-        to_remove <- variable[order(-distances)][1:n_to_remove]
+        to_remove <- variable[order(conc_at_var)][1:n_to_remove]  # remove lowest conc first
         sample_indices <- sort(setdiff(sample_indices, to_remove))
       }
       
