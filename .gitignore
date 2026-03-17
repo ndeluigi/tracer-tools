@@ -1,16 +1,7 @@
-# R specific
-.Rhistory
-.RData
-.Rproj.user
-*.Rproj
+# Exclude everything
+*
 
-# Shiny specific
-rsconnect/
-
-# System files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
+# Except these files
+!app.R
+!README.md
+!.gitignore
