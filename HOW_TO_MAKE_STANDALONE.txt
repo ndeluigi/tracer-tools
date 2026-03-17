@@ -1,0 +1,148 @@
+═══════════════════════════════════════════════════════════════
+   HOW TO CREATE A STANDALONE APP (NO INTERNET NEEDED)
+═══════════════════════════════════════════════════════════════
+
+SIMPLE 2-STEP PROCESS:
+
+STEP 1: Run the Setup Script (ONE TIME, WITH INTERNET)
+───────────────────────────────────────────────────────────────
+On your current computer (with internet):
+
+1. Open R or RStudio
+2. Set working directory to this folder
+3. Run this command:
+
+   source("make_portable.R")
+
+4. Wait 2-5 minutes while it downloads and packages everything
+
+This creates a folder called "DischargeCalculator_Portable"
+
+
+STEP 2: Use Anywhere (NO INTERNET NEEDED)
+───────────────────────────────────────────────────────────────
+The "DischargeCalculator_Portable" folder is now completely
+self-contained and can be used on any computer:
+
+1. Copy the entire folder to:
+   - USB drive
+   - Network drive
+   - Another computer
+   - Email/cloud (if size permits)
+
+2. On the new computer:
+   - Install R (one-time, from https://cran.r-project.org/)
+   - Copy the folder anywhere
+   - Double-click "START_APP.bat"
+
+That's it! No package installation, no internet needed!
+
+
+═══════════════════════════════════════════════════════════════
+   WHAT GETS PACKAGED
+═══════════════════════════════════════════════════════════════
+
+✓ The Shiny app (app.R)
+✓ All R packages (shiny, DT, ggplot2, dplyr)
+✓ All package dependencies (~50-100 MB)
+✓ Launcher scripts (Windows and R)
+✓ Documentation
+✓ Example data
+
+
+═══════════════════════════════════════════════════════════════
+   ALTERNATIVE: MANUAL METHOD
+═══════════════════════════════════════════════════════════════
+
+If the automated script doesn't work, you can create it manually:
+
+1. Create folder structure:
+   DischargeCalculator_Portable/
+   ├── app/
+   ├── library/
+   └── docs/
+
+2. Install packages to local library:
+   
+   local_lib <- "path/to/DischargeCalculator_Portable/library"
+   install.packages(c("shiny", "DT", "ggplot2", "dplyr"),
+                    lib = local_lib,
+                    dependencies = TRUE)
+
+3. Copy app.R to app/ folder
+
+4. Create START_APP.bat:
+   
+   @echo off
+   set R_LIBS=%~dp0library
+   Rscript.exe -e ".libPaths(c('%R_LIBS%', .libPaths())); shiny::runApp('%~dp0app', launch.browser=TRUE)"
+   pause
+
+5. Package and distribute
+
+
+═══════════════════════════════════════════════════════════════
+   TESTING
+═══════════════════════════════════════════════════════════════
+
+To test the portable version:
+
+1. Copy DischargeCalculator_Portable to a different location
+2. Open it and double-click START_APP.bat
+3. The app should open in your browser
+4. If it works, it will work on any computer with R installed
+
+
+═══════════════════════════════════════════════════════════════
+   TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+Problem: "R is not installed"
+→ Install R from https://cran.r-project.org/
+
+Problem: "Package not found"
+→ Re-run make_portable.R
+→ Make sure library folder is not empty
+
+Problem: Script fails during package installation
+→ Check internet connection
+→ Try running as administrator
+→ Install packages manually (see Alternative Method)
+
+
+═══════════════════════════════════════════════════════════════
+   FREQUENTLY ASKED QUESTIONS
+═══════════════════════════════════════════════════════════════
+
+Q: Do I need internet on the new computer?
+A: No! Only R needs to be installed. All packages are included.
+
+Q: How big is the portable folder?
+A: Approximately 50-100 MB (depending on package versions)
+
+Q: Can I use this on Mac/Linux?
+A: Yes! Use START_APP.R instead of START_APP.bat
+   Run: Rscript START_APP.R
+
+Q: Can I update the app later?
+A: Yes! Just replace app/app.R with the new version.
+   No need to reinstall packages.
+
+Q: What if R is not in PATH?
+A: Use START_APP.R from within R/RStudio instead
+
+Q: Can I include this in a publication?
+A: Yes! It's a great way to share reproducible research tools.
+
+
+═══════════════════════════════════════════════════════════════
+   SUMMARY
+═══════════════════════════════════════════════════════════════
+
+✓ Run make_portable.R once (with internet)
+✓ Get a self-contained folder
+✓ Copy to any computer with R
+✓ No internet or package installation needed
+✓ Works offline forever
+
+═══════════════════════════════════════════════════════════════
