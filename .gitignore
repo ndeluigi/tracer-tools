@@ -3,7 +3,9 @@
 
 # Except these files
 !app.R
-!app2.R
-!field_timer.html
 !README.md
 !.gitignore
+
+# Except fieldtools directory and all its contents
+!fieldtools/
+!fieldtools/**

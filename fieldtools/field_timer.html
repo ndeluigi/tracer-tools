@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
     <title>Field Sampling Timer</title>
     <style>
         * {
@@ -223,7 +227,7 @@
     <div class="container">
         <!-- Setup Screen -->
         <div id="setupScreen" class="card">
-            <h1>🔬 Field Sampling Timer</h1>
+            <h1>Field Sampling Timer</h1>
             <p class="subtitle">Scan QR code to load sampling schedule</p>
             
             <button class="btn btn-primary" onclick="startQRScanner()">📷 Scan QR Code</button>
@@ -300,7 +304,6 @@
                 </div>
             </div>
             
-            <button class="btn btn-success" id="sampleBtn" onclick="markSampleTaken()" disabled>✓ Sample Taken</button>
             <button class="btn btn-danger" onclick="stopTimer()">⏹️ Stop Timer</button>
         </div>
     </div>
@@ -316,6 +319,19 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     
     <script>
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registered:', registration);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed:', err);
+                    });
+            });
+        }
+        
         let samplingSchedule = null;
         let timerStartTime = null;
         let timerInterval = null;
@@ -396,40 +412,92 @@
             playBeep(100, 1000);
         }
         
+        // Request camera permission first (iOS/Android compatible)
+        async function requestCameraPermission() {
+            try {
+                // Request permission explicitly for iOS Safari
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" } 
+                });
+                // Stop the stream immediately - we just needed permission
+                stream.getTracks().forEach(track => track.stop());
+                return true;
+            } catch (err) {
+                console.error('Camera permission error:', err);
+                return false;
+            }
+        }
+        
         // Start QR scanner
-        function startQRScanner() {
+        async function startQRScanner() {
             document.getElementById('qrReaderContainer').classList.remove('hidden');
             document.getElementById('manualInputContainer').classList.add('hidden');
             
-            html5QrCode = new Html5Qrcode("qr-reader");
-            html5QrCode.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: 250 },
-                onScanSuccess,
-                onScanError
-            ).catch(err => {
+            // Request permission first for iOS compatibility
+            const hasPermission = await requestCameraPermission();
+            if (!hasPermission) {
                 document.getElementById('qrReaderContainer').classList.add('hidden');
+                showCameraError('Permission denied');
+                return;
+            }
+            
+            try {
+                html5QrCode = new Html5Qrcode("qr-reader");
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    { 
+                        fps: 10, 
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0
+                    },
+                    onScanSuccess,
+                    onScanError
+                );
+            } catch (err) {
+                document.getElementById('qrReaderContainer').classList.add('hidden');
+                showCameraError(err);
+            }
+        }
+        
+        // Show camera error with platform-specific instructions
+        function showCameraError(err) {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const isAndroid = /Android/.test(navigator.userAgent);
+            
+            let errorMsg = "Camera Error\n\n";
+            
+            if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
+                errorMsg += "Camera permission was denied.\n\n";
                 
-                // Provide helpful error message
-                let errorMsg = "Camera Error\n\n";
-                if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
-                    errorMsg += "Camera permission was denied.\n\n";
-                    errorMsg += "To enable camera:\n";
-                    errorMsg += "1. Tap the lock/info icon in the address bar\n";
-                    errorMsg += "2. Find 'Camera' permission\n";
-                    errorMsg += "3. Change to 'Allow'\n";
-                    errorMsg += "4. Reload the page\n\n";
-                    errorMsg += "OR use 'Enter Schedule Manually' button instead.";
-                } else if (err.toString().includes('NotFoundError')) {
-                    errorMsg += "No camera found on this device.\n\n";
-                    errorMsg += "Please use 'Enter Schedule Manually' button instead.";
+                if (isIOS) {
+                    errorMsg += "For iOS Safari:\n";
+                    errorMsg += "1. Go to Settings > Safari > Camera\n";
+                    errorMsg += "2. Select 'Allow'\n";
+                    errorMsg += "3. Reload this page\n\n";
+                    errorMsg += "OR tap 'Enter Schedule Manually' below.";
+                } else if (isAndroid) {
+                    errorMsg += "For Android Chrome:\n";
+                    errorMsg += "1. Tap the lock icon in the address bar\n";
+                    errorMsg += "2. Tap 'Permissions'\n";
+                    errorMsg += "3. Enable 'Camera'\n";
+                    errorMsg += "4. Reload this page\n\n";
+                    errorMsg += "OR tap 'Enter Schedule Manually' below.";
                 } else {
-                    errorMsg += err + "\n\n";
-                    errorMsg += "Try using 'Enter Schedule Manually' button instead.";
+                    errorMsg += "Please enable camera access in your browser settings.\n\n";
+                    errorMsg += "OR use 'Enter Schedule Manually' button instead.";
                 }
-                
-                alert(errorMsg);
-            });
+            } else if (err.toString().includes('NotFoundError')) {
+                errorMsg += "No camera found on this device.\n\n";
+                errorMsg += "Please use 'Enter Schedule Manually' button instead.";
+            } else if (err.toString().includes('NotReadableError')) {
+                errorMsg += "Camera is already in use by another app.\n\n";
+                errorMsg += "Please close other apps using the camera and try again.";
+            } else {
+                errorMsg += err + "\n\n";
+                errorMsg += "Try using 'Enter Schedule Manually' button instead.";
+            }
+            
+            alert(errorMsg);
         }
         
         // Stop QR scanner
@@ -444,12 +512,31 @@
         // Handle successful QR scan
         function onScanSuccess(decodedText) {
             try {
-                samplingSchedule = JSON.parse(decodedText);
-                stopQRScanner();
-                displaySchedule();
-                playBeep(100, 1000);
+                // Try parsing as simple newline-separated list first
+                const times = decodedText.split(/[\n,\s]+/)
+                    .map(s => s.trim())
+                    .filter(s => s !== '')
+                    .map(Number)
+                    .filter(n => !isNaN(n))
+                    .sort((a, b) => a - b);
+                
+                if (times.length >= 2) {
+                    samplingSchedule = {
+                        site: 'Field Sampling',
+                        total_samples: times.length,
+                        sampling_times: times,
+                        start_time: times[0],
+                        end_time: times[times.length - 1],
+                        timestamp: new Date().toLocaleString()
+                    };
+                    stopQRScanner();
+                    displaySchedule();
+                    playBeep(100, 1000);
+                } else {
+                    alert("QR code must contain at least 2 sampling times");
+                }
             } catch (e) {
-                alert("Invalid QR code format");
+                alert("Invalid QR code format: " + e.message);
             }
         }
         
@@ -510,15 +597,11 @@
             
             if (nextSampleIndex >= samplingSchedule.sampling_times.length) {
                 // All samples done
-                document.getElementById('countdown').textContent = '00:00';
-                document.getElementById('countdownLabel').textContent = 'All samples complete!';
-                document.getElementById('currentSample').textContent = `${samplingSchedule.total_samples} / ${samplingSchedule.total_samples}`;
-                document.getElementById('nextSampleTime').textContent = 'Complete';
-                document.getElementById('sampleBtn').disabled = true;
-                document.getElementById('currentSampleInfo').className = 'sample-info';
-                updateProgress(100);
                 clearInterval(timerInterval);
                 playBeep(300, 1200);
+                updateProgress(100);
+                updateStatus('All samples complete!');
+                showCompletionScreen();
                 return;
             }
             
@@ -544,13 +627,10 @@
                 } else {
                     document.getElementById('currentSampleInfo').className = 'sample-info';
                 }
-                
-                document.getElementById('sampleBtn').disabled = timeUntilNext > 5;
             } else {
                 document.getElementById('countdown').textContent = 'NOW!';
                 document.getElementById('countdownLabel').textContent = `TAKE SAMPLE ${nextSampleIndex + 1}`;
                 document.getElementById('currentSampleInfo').className = 'sample-info alert';
-                document.getElementById('sampleBtn').disabled = false;
                 
                 // Beep every 2 seconds when it's time
                 if (Math.floor(elapsed) % 2 === 0 && Math.floor(elapsed * 10) % 10 === 0) {
@@ -563,11 +643,58 @@
             updateProgress(progress);
         }
         
-        // Mark sample as taken
-        function markSampleTaken() {
-            currentSampleIndex++;
-            playBeep(100, 800);
-            updateStatus(`Sample ${currentSampleIndex} taken!`);
+        // Show completion screen with name input and save
+        function showCompletionScreen() {
+            document.getElementById('timerScreen').classList.add('hidden');
+            
+            const container = document.querySelector('.container');
+            const completionCard = document.createElement('div');
+            completionCard.className = 'card';
+            completionCard.innerHTML = `
+                <h1>✅ Sampling Complete!</h1>
+                <p class="subtitle">All ${samplingSchedule.total_samples} samples collected</p>
+                
+                <div style="margin: 30px 0;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold; color: #667eea;">Injection Name:</label>
+                    <input type="text" id="injectionName" 
+                           style="width: 100%; padding: 15px; font-size: 16px; border: 2px solid #667eea; border-radius: 8px;"
+                           placeholder="e.g., Site A - Run 1">
+                </div>
+                
+                <button class="btn btn-success" onclick="saveResults()">💾 Save Results</button>
+                <button class="btn btn-primary" onclick="location.reload()">🔄 New Session</button>
+            `;
+            container.appendChild(completionCard);
+        }
+        
+        // Save results with injection name
+        function saveResults() {
+            const injectionName = document.getElementById('injectionName').value.trim() || 'Unnamed Injection';
+            
+            // Create CSV with id, sample, interval, datetime format
+            const startButtonTime = new Date(timerStartTime).toISOString();
+            
+            let csvContent = 'id,sample,interval,datetime\n';
+            
+            // First row: start
+            csvContent += `1,start,0,"${startButtonTime}"\n`;
+            
+            // Sample rows
+            samplingSchedule.sampling_times.forEach((sampleTime, index) => {
+                const sampleDateTime = new Date(timerStartTime + (sampleTime * 1000));
+                csvContent += `${index + 2},sample${index + 1},${sampleTime},"${sampleDateTime.toISOString()}"\n`;
+            });
+            
+            // Create downloadable CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${injectionName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            alert('Results saved! You can start a new session.');
         }
         
         // Stop timer

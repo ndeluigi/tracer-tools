@@ -202,9 +202,18 @@ ui <- fluidPage(
                   ),
                   
                   tabPanel("Plot",
-                           plotOutput("conductivity_plot", height = "500px"),
+                           p(tags$b("Click on a plot to add a sampling point. "),
+                             "Red vertical bars show your selected sampling times."),
+                           fluidRow(
+                             column(3, actionButton("clear_samples", "Clear All", class = "btn-danger btn-sm")),
+                             column(3, actionButton("undo_sample", "Undo Last", class = "btn-warning btn-sm")),
+                             column(3, actionButton("auto_suggest", "Auto-Suggest", class = "btn-info btn-sm")),
+                             column(3, textOutput("sample_count_display"))
+                           ),
                            hr(),
-                           plotOutput("concentration_plot", height = "500px")
+                           plotOutput("conductivity_plot", height = "500px", click = "plot_click_cond"),
+                           hr(),
+                           plotOutput("concentration_plot", height = "500px", click = "plot_click_conc")
                   ),
                   
                   tabPanel("Method",
@@ -238,10 +247,76 @@ server <- function(input, output, session) {
     mass_rhodamine = NULL,
     temp_correction_factor = NULL,
     sampling_times = NULL,
+    sampling_indices = NULL,
     breakthrough_start_idx = NULL,
     breakthrough_end_idx = NULL,
+    peak_idx = NULL,
     calculation_method = NULL  # Track which method was used: "salt" or "rhodamine"
   )
+  
+  # Reactive value to store manually clicked sampling times (in minutes)
+  manual_samples_min <- reactiveVal(numeric(0))
+  
+  # Snap a clicked x value to the nearest data point
+  snap_to_data <- function(click_x) {
+    time_pts <- calc_results$data$Time_min
+    nearest_idx <- which.min(abs(time_pts - click_x))
+    time_pts[nearest_idx]
+  }
+  
+  # Click on conductivity plot -> add sampling point
+  observeEvent(input$plot_click_cond, {
+    if (!is.null(calc_results$data)) {
+      click_x <- input$plot_click_cond$x  # x is in minutes
+      if (!is.null(click_x) && click_x >= 0) {
+        snapped_x <- snap_to_data(click_x)
+        current <- manual_samples_min()
+        if (!(snapped_x %in% current)) {
+          manual_samples_min(sort(c(current, snapped_x)))
+        }
+      }
+    }
+  })
+  
+  # Click on concentration plot -> add sampling point
+  observeEvent(input$plot_click_conc, {
+    if (!is.null(calc_results$data)) {
+      click_x <- input$plot_click_conc$x  # x is in minutes
+      if (!is.null(click_x) && click_x >= 0) {
+        snapped_x <- snap_to_data(click_x)
+        current <- manual_samples_min()
+        if (!(snapped_x %in% current)) {
+          manual_samples_min(sort(c(current, snapped_x)))
+        }
+      }
+    }
+  })
+  
+  # Clear all manual samples
+  observeEvent(input$clear_samples, {
+    manual_samples_min(numeric(0))
+  })
+  
+  # Undo last manual sample
+  observeEvent(input$undo_sample, {
+    current <- manual_samples_min()
+    if (length(current) > 0) {
+      manual_samples_min(current[-length(current)])
+    }
+  })
+  
+  # Auto-suggest: run the concentration-weighted algorithm and populate manual_samples_min
+  observeEvent(input$auto_suggest, {
+    if (!is.null(calc_results$sampling_times)) {
+      manual_samples_min(sort(calc_results$sampling_times / 60))
+    }
+  })
+  
+  # Display sample count
+  output$sample_count_display <- renderText({
+    n <- length(manual_samples_min())
+    paste0(n, " sample", ifelse(n != 1, "s", ""), " placed")
+  })
   
   # Parse conductivity data
   parse_conductivity <- reactive({
@@ -547,13 +622,13 @@ server <- function(input, output, session) {
     calc_results$temp_correction_factor <- temp_correction_factor
     
     # Calculate sampling times using CONCENTRATION-WEIGHTED spacing
-    # Strategy:
+    # Strategy (5 fixed samples):
     #   - 1 sample at background (before breakthrough)
-    #   - 1 sample at tail (after breakthrough, background recovered)
+    #   - 1 sample at start of rise (first above threshold)
     #   - 1 sample exactly at peak
-    #   - Remaining samples placed where concentration is highest:
-    #     use cumulative sum of excess conductivity as CDF,
-    #     then sample at equal quantiles → more samples where signal is high
+    #   - 1 sample at end of tail (last above threshold)
+    #   - 1 sample after tail (background recovered)
+    #   - Remaining samples: sqrt(concentration)-weighted CDF quantiles
     threshold <- background + 0.5  # Small threshold above background
     excess_indices <- which(conductivity > threshold)
     
@@ -564,24 +639,30 @@ server <- function(input, output, session) {
       
       n_samples <- input$n_samples_breakthrough
       
-      # Fixed samples: background (before curve) and tail (after curve)
-      bg_idx <- max(1, breakthrough_start_idx - 1)
-      tail_idx <- min(count_cond, breakthrough_end_idx + 1)
+      # 5 fixed samples
+      bg_idx <- max(1, breakthrough_start_idx - 1)          # background before curve
+      rise_idx <- breakthrough_start_idx                     # start of rise
+      tail_end_idx <- breakthrough_end_idx                   # end of tail
+      tail_bg_idx <- min(count_cond, breakthrough_end_idx + 1) # background after curve
       
-      # Concentration-weighted distribution for the remaining samples
-      n_variable <- n_samples - 3  # subtract background, peak, tail
+      # Remaining samples to distribute via concentration weighting
+      n_variable <- n_samples - 5  # subtract bg, rise, peak, tail_end, tail_bg
       
       if (n_variable > 0) {
         # Extract excess conductivity over the breakthrough window
         bt_indices <- breakthrough_start_idx:breakthrough_end_idx
         bt_excess <- pmax(excess_conductivity[bt_indices], 0)
         
-        # Build cumulative distribution from the concentration values
-        cum_conc <- cumsum(bt_excess)
+        # Use sqrt(concentration) as weight: still favors high-conc areas
+        # but much less aggressively, ensuring the full curve shape is covered
+        bt_weights <- sqrt(bt_excess) + 0.01  # small offset so zero-conc regions aren't completely ignored
+        
+        # Build cumulative distribution from the weights
+        cum_conc <- cumsum(bt_weights)
         cum_conc <- cum_conc / cum_conc[length(cum_conc)]  # normalize to [0, 1]
         
-        # Sample at equal quantiles of the concentration CDF
-        # This places more samples where concentration is high
+        # Sample at equal quantiles of the weighted CDF
+        # This places more samples where concentration is high but covers the full curve
         target_quantiles <- seq(0, 1, length.out = n_variable + 2)
         target_quantiles <- target_quantiles[2:(n_variable + 1)]  # exclude 0 and 1 (bg and tail)
         
@@ -593,10 +674,12 @@ server <- function(input, output, session) {
           variable_indices[q_i] <- bt_indices[idx_in_window]
         }
         
-        # Combine: background + concentration-weighted + peak + tail
-        sample_indices <- sort(unique(c(bg_idx, variable_indices, peak_idx, tail_idx)))
+        # Combine all 5 fixed + variable samples
+        fixed_samples <- c(bg_idx, rise_idx, peak_idx, tail_end_idx, tail_bg_idx)
+        sample_indices <- sort(unique(c(fixed_samples, variable_indices)))
       } else {
-        sample_indices <- sort(unique(c(bg_idx, peak_idx, tail_idx)))
+        fixed_samples <- c(bg_idx, rise_idx, peak_idx, tail_end_idx, tail_bg_idx)
+        sample_indices <- sort(unique(fixed_samples))
       }
       
       # Fill in if we lost samples due to duplicates
@@ -614,13 +697,12 @@ server <- function(input, output, session) {
         sample_indices <- sort(unique(c(sample_indices, new_idx)))
       }
       
-      # Trim if too many (keep bg, peak, tail; drop lowest-concentration ones)
+      # Trim if too many (always keep 5 fixed; drop lowest-concentration variable ones)
       if (length(sample_indices) > n_samples) {
-        fixed <- c(bg_idx, peak_idx, tail_idx)
-        variable <- setdiff(sample_indices, fixed)
+        variable <- setdiff(sample_indices, fixed_samples)
         conc_at_var <- excess_conductivity[variable]
         n_to_remove <- length(sample_indices) - n_samples
-        to_remove <- variable[order(conc_at_var)][1:n_to_remove]  # remove lowest conc first
+        to_remove <- variable[order(conc_at_var)][1:n_to_remove]
         sample_indices <- sort(setdiff(sample_indices, to_remove))
       }
       
@@ -763,38 +845,38 @@ server <- function(input, output, session) {
   
   # Dynamically add/remove Sampling tab
   observe({
-    if (!is.null(calc_results$sampling_times) && !sampling_tab_exists()) {
+    has_samples <- length(manual_samples_min()) > 0
+    if (has_samples && !sampling_tab_exists()) {
       # Add Sampling tab before Method tab
       insertTab(inputId = "tabs", 
                 tabPanel("Sampling",
-                         h3("Sampling frequency calculator"),
+                         h3("Your Sampling Schedule"),
                          verbatimTextOutput("sampling_frequency"),
                          hr(),
                          h4("Mobile Field Timer"),
-                         p("Choose one of these methods to load the schedule into the mobile timer app:"),
+                         p("Transfer your sampling schedule to the mobile timer app:"),
                          
-                         h5("Method 1: QR Code (Recommended)"),
+                         h5("Option 1: QR Code"),
                          p("Scan this QR code with your phone's camera:"),
                          plotOutput("qr_code_plot", height = "300px", width = "300px"),
                          
                          hr(),
                          
-                         h5("Method 2: Manual Copy-Paste"),
-                         p("If camera doesn't work, copy this JSON data and paste it into the mobile app:"),
-                         verbatimTextOutput("json_schedule_text"),
-                         helpText("Tap 'Enter Schedule Manually' in the mobile app, then paste this text."),
+                         h5("Option 2: Copy sampling times (seconds)"),
+                         p("Copy these times and paste into the mobile app:"),
+                         verbatimTextOutput("sampling_times_text"),
                          
                          hr(),
                          
                          downloadButton("download_timer_html", "Download Mobile Timer App"),
                          hr(),
-                         helpText("Red vertical bars on plots show recommended sampling times."),
-                         helpText("Configure sampling strategy in the Settings tab (left sidebar).")
+                         helpText("Place sampling points by clicking on the plots in the Plot tab."),
+                         helpText("Use 'Auto-Suggest' to get a starting set, then adjust by clicking.")
                 ),
                 target = "Method",
                 position = "before")
       sampling_tab_exists(TRUE)
-    } else if (is.null(calc_results$sampling_times) && sampling_tab_exists()) {
+    } else if (!has_samples && sampling_tab_exists()) {
       # Remove Sampling tab
       removeTab(inputId = "tabs", target = "Sampling")
       sampling_tab_exists(FALSE)
@@ -933,86 +1015,55 @@ server <- function(input, output, session) {
     }
   })
   
-  # Sampling frequency output
+  # Sampling frequency output (uses manually placed samples)
   output$sampling_frequency <- renderText({
-    if (is.null(calc_results$sampling_times)) {
-      return("Calculate tracer masses using Injections tab to see sampling recommendations.")
+    samples_min <- manual_samples_min()
+    if (length(samples_min) == 0) {
+      return("Click on the plots in the Plot tab to place sampling points.")
     }
     
-    n_samples <- input$n_samples_breakthrough
-    # Use appropriate time step based on calculation method
-    dt <- if (calc_results$calculation_method == "injections") {
-      input$time_step_inj
-    } else {
-      input$time_step
-    }
+    samples_sec <- samples_min * 60
+    actual_n <- length(samples_sec)
     
-    # Calculate breakthrough duration
-    breakthrough_duration_sec <- (calc_results$breakthrough_end_idx - calc_results$breakthrough_start_idx) * dt
-    breakthrough_duration_min <- breakthrough_duration_sec / 60
-    
-    # Actual number of samples (may differ slightly from n_samples)
-    actual_n <- length(calc_results$sampling_times)
-    
-    # Format sampling times with labels
-    sample_times_min <- calc_results$sampling_times / 60
-    peak_time_sec <- (calc_results$peak_idx - 1) * dt
-    
-    # Build labels for each sample
-    sample_labels <- character(actual_n)
-    intervals <- c(NA, diff(calc_results$sampling_times))
+    # Build sample list with intervals
+    intervals <- c(NA, diff(samples_sec))
+    sample_lines <- character(actual_n)
     for (i in 1:actual_n) {
-      label <- ""
-      if (calc_results$sampling_times[i] < (calc_results$breakthrough_start_idx - 1) * dt + 0.5) {
-        label <- " <-- BACKGROUND"
-      } else if (abs(calc_results$sampling_times[i] - peak_time_sec) < dt * 0.5) {
-        label <- " <-- PEAK"
-      } else if (calc_results$sampling_times[i] > (calc_results$breakthrough_end_idx - 1) * dt - 0.5) {
-        label <- " <-- TAIL (background)"
-      }
-      
       interval_str <- if (i == 1) "       " else sprintf("(%+.0fs)", intervals[i])
-      sample_labels[i] <- paste0(
+      sample_lines[i] <- paste0(
         "  Sample ", sprintf("%2d", i), ": ", 
-        sprintf("%6.1f", sample_times_min[i]), " min (", 
-        sprintf("%5.0f", calc_results$sampling_times[i]), " s)  ",
-        sprintf("%-8s", interval_str),
-        label)
+        sprintf("%6.1f", samples_min[i]), " min (", 
+        sprintf("%5.0f", samples_sec[i]), " s)  ",
+        sprintf("%-8s", interval_str))
     }
+    
+    total_duration <- samples_sec[actual_n] - samples_sec[1]
     
     paste0(
       "═══════════════════════════════════════════════════════════════\n",
-      "SAMPLING STRATEGY FOR BREAKTHROUGH CURVE\n",
+      "YOUR SAMPLING SCHEDULE\n",
       "═══════════════════════════════════════════════════════════════\n\n",
-      "Strategy: Non-uniform, peak-focused\n",
-      "  - 1 sample at background (before breakthrough)\n",
-      "  - 1 sample at peak concentration\n",
-      "  - 1 sample at tail (after background is reached again)\n",
-      "  - Remaining samples denser around peak, sparser at edges\n\n",
-      
-      "Breakthrough curve:\n",
-      "  Breakthrough start         : ", sprintf("%.1f", (calc_results$breakthrough_start_idx - 1) * dt / 60), " min (", 
-      sprintf("%.0f", (calc_results$breakthrough_start_idx - 1) * dt), " s)\n",
-      "  Peak                      : ", sprintf("%.1f", peak_time_sec / 60), " min (", 
-      sprintf("%.0f", peak_time_sec), " s)\n",
-      "  Breakthrough end          : ", sprintf("%.1f", (calc_results$breakthrough_end_idx - 1) * dt / 60), " min (", 
-      sprintf("%.0f", (calc_results$breakthrough_end_idx - 1) * dt), " s)\n",
-      "  Total duration            : ", sprintf("%.1f", breakthrough_duration_min), " min (", 
-      sprintf("%.0f", breakthrough_duration_sec), " s)\n\n",
-      
-      "Sampling plan:\n",
       "  Total samples             : ", actual_n, "\n",
-      "  Min interval              : ", sprintf("%.0f", min(intervals[-1])), " s\n",
-      "  Max interval              : ", sprintf("%.0f", max(intervals[-1])), " s\n\n",
-      
-      "Recommended sampling times:\n",
-      paste0(sample_labels, "\n", collapse = ""),
+      "  First sample at           : ", sprintf("%.1f", samples_min[1]), " min (", sprintf("%.0f", samples_sec[1]), " s)\n",
+      "  Last sample at            : ", sprintf("%.1f", samples_min[actual_n]), " min (", sprintf("%.0f", samples_sec[actual_n]), " s)\n",
+      "  Total duration            : ", sprintf("%.1f", total_duration / 60), " min (", sprintf("%.0f", total_duration), " s)\n",
+      if (actual_n > 1) paste0(
+        "  Min interval              : ", sprintf("%.0f", min(intervals[-1])), " s\n",
+        "  Max interval              : ", sprintf("%.0f", max(intervals[-1])), " s\n"
+      ) else "",
+      "\nSampling times:\n",
+      paste0(sample_lines, "\n", collapse = ""),
       "\n",
       "═══════════════════════════════════════════════════════════════\n",
-      "Note: These times are shown as red vertical bars on the plot.\n",
-      "Intervals are shorter near the peak, longer at the edges.\n",
+      "Click on plots to add/adjust. Use Clear/Undo buttons to remove.\n",
       "═══════════════════════════════════════════════════════════════\n"
     )
+  })
+  
+  # Simple text output of sampling times in seconds for copy-paste to mobile app
+  output$sampling_times_text <- renderText({
+    samples_sec <- round(manual_samples_min() * 60)
+    paste(samples_sec, collapse = "\n")
   })
   
   # Data table output
@@ -1049,10 +1100,9 @@ server <- function(input, output, session) {
                  label = paste("Background =", input$background_fluorescence, "ppb"), 
                  color = "gray50", size = 3.5)
       
-      # Add sampling time vertical bars if available
-      if (!is.null(calc_results$sampling_times)) {
-        sampling_times_min <- calc_results$sampling_times / 60
-        p <- p + geom_vline(xintercept = sampling_times_min, 
+      # Add manual sampling time vertical bars
+      if (length(manual_samples_min()) > 0) {
+        p <- p + geom_vline(xintercept = manual_samples_min(), 
                             color = "red", 
                             linetype = "solid", 
                             size = 0.8, 
@@ -1085,10 +1135,9 @@ server <- function(input, output, session) {
                  label = paste("Background =", bg_value, "µS/cm"), 
                  color = "gray50", size = 3.5)
       
-      # Add sampling time vertical bars if available
-      if (!is.null(calc_results$sampling_times)) {
-        sampling_times_min <- calc_results$sampling_times / 60
-        p <- p + geom_vline(xintercept = sampling_times_min, 
+      # Add manual sampling time vertical bars
+      if (length(manual_samples_min()) > 0) {
+        p <- p + geom_vline(xintercept = manual_samples_min(), 
                             color = "red", 
                             linetype = "solid", 
                             size = 0.8, 
@@ -1120,10 +1169,9 @@ server <- function(input, output, session) {
         geom_point(color = "darkorchid", size = 2) +
         geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
       
-      # Add sampling time vertical bars if available
-      if (!is.null(calc_results$sampling_times)) {
-        sampling_times_min <- calc_results$sampling_times / 60
-        p <- p + geom_vline(xintercept = sampling_times_min, 
+      # Add manual sampling time vertical bars
+      if (length(manual_samples_min()) > 0) {
+        p <- p + geom_vline(xintercept = manual_samples_min(), 
                             color = "red", 
                             linetype = "solid", 
                             size = 0.8, 
@@ -1144,10 +1192,9 @@ server <- function(input, output, session) {
         geom_point(color = "darkgreen", size = 2) +
         geom_hline(yintercept = 0, linetype = "dashed", color = "gray50")
       
-      # Add sampling time vertical bars if available
-      if (!is.null(calc_results$sampling_times)) {
-        sampling_times_min <- calc_results$sampling_times / 60
-        p <- p + geom_vline(xintercept = sampling_times_min, 
+      # Add manual sampling time vertical bars
+      if (length(manual_samples_min()) > 0) {
+        p <- p + geom_vline(xintercept = manual_samples_min(), 
                             color = "red", 
                             linetype = "solid", 
                             size = 0.8, 
@@ -1213,50 +1260,21 @@ server <- function(input, output, session) {
     }
   )
   
-  # Generate QR code with sampling schedule
+  # Generate QR code with sampling schedule (from manual clicks)
   output$qr_code_plot <- renderPlot({
-    if (is.null(calc_results$sampling_times)) {
+    samples_sec <- round(manual_samples_min() * 60)
+    if (length(samples_sec) == 0) {
       return(NULL)
     }
     
-    # Create JSON data for QR code
-    qr_data <- list(
-      site = "Field Sampling",
-      total_samples = length(calc_results$sampling_times),
-      sampling_times = as.numeric(calc_results$sampling_times),
-      start_time = as.numeric(calc_results$sampling_times[1]),
-      end_time = as.numeric(calc_results$sampling_times[length(calc_results$sampling_times)]),
-      timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-    )
-    
-    # Convert to JSON string
-    qr_string <- jsonlite::toJSON(qr_data, auto_unbox = TRUE)
+    # Simple newline-separated list of times in seconds
+    qr_string <- paste(samples_sec, collapse = "\n")
     
     # Generate QR code
     qr <- qr_code(qr_string)
     
     # Plot QR code
     plot(qr)
-  })
-  
-  # Display JSON schedule text for manual copy-paste
-  output$json_schedule_text <- renderText({
-    if (is.null(calc_results$sampling_times)) {
-      return("")
-    }
-    
-    # Create JSON data (same as QR code)
-    qr_data <- list(
-      site = "Field Sampling",
-      total_samples = length(calc_results$sampling_times),
-      sampling_times = as.numeric(calc_results$sampling_times),
-      start_time = as.numeric(calc_results$sampling_times[1]),
-      end_time = as.numeric(calc_results$sampling_times[length(calc_results$sampling_times)]),
-      timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-    )
-    
-    # Convert to JSON string (pretty printed for readability)
-    jsonlite::toJSON(qr_data, auto_unbox = TRUE, pretty = FALSE)
   })
   
   # Download mobile timer HTML app
