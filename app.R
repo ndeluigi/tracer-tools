@@ -868,7 +868,28 @@ server <- function(input, output, session) {
                          
                          hr(),
                          
-                         downloadButton("download_timer_html", "Download Mobile Timer App"),
+                         h4("Mobile Timer App (PWA)"),
+                         p("Access the mobile timer app at:"),
+                         tags$a(href = "https://ndeluigi.github.io/tracer-tools/field_timer.html", 
+                                target = "_blank",
+                                "https://ndeluigi.github.io/tracer-tools/field_timer.html",
+                                style = "font-size: 16px; font-weight: bold;"),
+                         
+                         h5("Installation Instructions:", style = "margin-top: 20px;"),
+                         tags$ol(
+                           tags$li(tags$strong("Android:"), " Open the link in Chrome → Menu (⋮) → 'Add to Home screen'"),
+                           tags$li(tags$strong("iOS:"), " Open the link in Safari → Share button → 'Add to Home Screen'")
+                         ),
+                         
+                         h5("How to Use:"),
+                         tags$ol(
+                           tags$li("Scan the QR code above with your phone's built-in Camera app"),
+                           tags$li("Copy the numbers shown"),
+                           tags$li("Open the installed timer app"),
+                           tags$li("Tap 'Enter Schedule Manually'"),
+                           tags$li("Paste the times (one per line)")
+                         ),
+                         
                          hr(),
                          helpText("Place sampling points by clicking on the plots in the Plot tab."),
                          helpText("Use 'Auto-Suggest' to get a starting set, then adjust by clicking.")
@@ -1277,21 +1298,6 @@ server <- function(input, output, session) {
     plot(qr)
   })
   
-  # Download mobile timer HTML app
-  output$download_timer_html <- downloadHandler(
-    filename = function() {
-      "field_timer.html"
-    },
-    content = function(file) {
-      # Copy the field_timer.html file
-      timer_path <- file.path(getwd(), "field_timer.html")
-      if (file.exists(timer_path)) {
-        file.copy(timer_path, file)
-      } else {
-        showNotification("field_timer.html not found. Please ensure it's in the app directory.", type = "error")
-      }
-    }
-  )
 }
 
 # Run the application
