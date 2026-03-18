@@ -464,24 +464,30 @@
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
             const isAndroid = /Android/.test(navigator.userAgent);
             
-            let errorMsg = "Camera Error\n\n";
+            let errorMsg = "Camera Access Not Available\n\n";
             
-            if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
-                errorMsg += "Camera permission was denied.\n\n";
-                
-                if (isIOS) {
-                    errorMsg += "For iOS Safari:\n";
-                    errorMsg += "1. Go to Settings > Safari > Camera\n";
-                    errorMsg += "2. Select 'Allow'\n";
-                    errorMsg += "3. Reload this page\n\n";
-                    errorMsg += "OR tap 'Enter Schedule Manually' below.";
-                } else if (isAndroid) {
-                    errorMsg += "For Android Chrome:\n";
-                    errorMsg += "1. Tap the lock icon in the address bar\n";
-                    errorMsg += "2. Tap 'Permissions'\n";
-                    errorMsg += "3. Enable 'Camera'\n";
-                    errorMsg += "4. Reload this page\n\n";
-                    errorMsg += "OR tap 'Enter Schedule Manually' below.";
+            if (isIOS) {
+                errorMsg += "iOS does not allow installed web apps to access the camera.\n\n";
+                errorMsg += "To use the QR code:\n";
+                errorMsg += "1. Use your iPhone's built-in Camera app to scan the QR code\n";
+                errorMsg += "2. The QR code contains the sampling times (numbers)\n";
+                errorMsg += "3. Copy those numbers\n";
+                errorMsg += "4. Tap 'Enter Schedule Manually' below\n";
+                errorMsg += "5. Paste the times (one per line)\n\n";
+                errorMsg += "This is the recommended method for iOS.";
+            } else if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
+                if (isAndroid) {
+                    errorMsg = "Camera permission was denied.\n\n";
+                    errorMsg += "To use the QR code:\n";
+                    errorMsg += "1. Use your phone's built-in Camera app to scan the QR code\n";
+                    errorMsg += "2. The QR code contains the sampling times (numbers)\n";
+                    errorMsg += "3. Copy those numbers\n";
+                    errorMsg += "4. Tap 'Enter Schedule Manually' below\n";
+                    errorMsg += "5. Paste the times (one per line)\n\n";
+                    errorMsg += "Alternatively, enable camera permission:\n";
+                    errorMsg += "• Tap the lock icon in the address bar\n";
+                    errorMsg += "• Tap 'Permissions' → Enable 'Camera'\n";
+                    errorMsg += "• Reload this page";
                 } else {
                     errorMsg += "Please enable camera access in your browser settings.\n\n";
                     errorMsg += "OR use 'Enter Schedule Manually' button instead.";

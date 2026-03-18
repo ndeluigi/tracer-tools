@@ -5,7 +5,6 @@
 !app.R
 !README.md
 !.gitignore
-
-# Except fieldtools directory and all its contents
-!fieldtools/
-!fieldtools/**
+!field_timer.html
+!manifest.json
+!service-worker.js
