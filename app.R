@@ -158,21 +158,21 @@ ui <- fluidPage(
                                         max = 0.030,
                                         step = 0.001),
                            helpText("Rhodamine mass accounts for solution concentration."),
-                           helpText("Temperature correction: Fluorescence decreases ~2-3% per °C. Masses are corrected to 25°C reference."),
+                           helpText("Temperature dependence: Fluorescence response decreases ~2-3% per °C. This affects sensor readings, NOT the injected mass."),
                            
                            hr(),
                            
                            h4("Stock solution concentrations"),
                            numericInput("arabinose_stock_conc", 
-                                        "Arabinose Stock Solution Concentration (ppb)", 
-                                        value = 1000000, 
+                                        "Arabinose Stock Solution Concentration (g/L)", 
+                                        value = 200, 
                                         min = 0,
-                                        step = 1000),
+                                        step = 10),
                            numericInput("glucose_stock_conc", 
-                                        "Glucose Stock Solution Concentration (ppb)", 
-                                        value = 1000000, 
+                                        "Glucose Stock Solution Concentration (g/L)", 
+                                        value = 200, 
                                         min = 0,
-                                        step = 1000),
+                                        step = 10),
                            helpText("Stock solution concentrations for field application."),
                            helpText("Output will show mL of stock solution to add instead of grams of powder."),
                            
@@ -261,7 +261,7 @@ server <- function(input, output, session) {
     mass_arabinose = NULL,
     mass_glucose = NULL,
     mass_rhodamine = NULL,
-    temp_correction_factor = NULL,
+    temp_response_factor = NULL,
     sampling_times = NULL,
     sampling_indices = NULL,
     breakthrough_start_idx = NULL,
@@ -435,7 +435,7 @@ server <- function(input, output, session) {
     calc_results$mass_arabinose <- NULL
     calc_results$mass_glucose <- NULL
     calc_results$mass_rhodamine <- NULL
-    calc_results$temp_correction_factor <- NULL
+    calc_results$temp_response_factor <- NULL
     
     # Clear sampling times (not calculated in Q_salt)
     calc_results$sampling_times <- NULL
@@ -520,7 +520,7 @@ server <- function(input, output, session) {
     calc_results$mass_arabinose <- NULL
     calc_results$mass_glucose <- NULL
     calc_results$mass_rhodamine <- NULL
-    calc_results$temp_correction_factor <- NULL
+    calc_results$temp_response_factor <- NULL
     
     # Clear sampling times (not calculated in Q_rhoWT)
     calc_results$sampling_times <- NULL
@@ -583,13 +583,18 @@ server <- function(input, output, session) {
     mass_glucose_ug <- Q * target_gluc_ppb * w_eff    # µg
     
     # Calculate mL of stock solution needed for arabinose and glucose
+    # Stock concentrations are in g/L, convert to µg/L (ppb)
+    # 1 g/L = 1,000,000 µg/L
+    arabinose_stock_conc_gL <- input$arabinose_stock_conc  # g/L
+    glucose_stock_conc_gL <- input$glucose_stock_conc      # g/L
+    
+    arabinose_stock_conc_ppb <- arabinose_stock_conc_gL * 1e6  # µg/L
+    glucose_stock_conc_ppb <- glucose_stock_conc_gL * 1e6      # µg/L
+    
     # Volume (L) = mass (µg) / concentration (µg/L)
     # Volume (mL) = Volume (L) * 1000
-    arabinose_stock_conc <- input$arabinose_stock_conc  # ppb = µg/L
-    glucose_stock_conc <- input$glucose_stock_conc      # ppb = µg/L
-    
-    volume_arabinose_L <- mass_arabinose_ug / arabinose_stock_conc  # L
-    volume_glucose_L <- mass_glucose_ug / glucose_stock_conc        # L
+    volume_arabinose_L <- mass_arabinose_ug / arabinose_stock_conc_ppb  # L
+    volume_glucose_L <- mass_glucose_ug / glucose_stock_conc_ppb        # L
     
     volume_arabinose_mL <- volume_arabinose_L * 1000  # mL
     volume_glucose_mL <- volume_glucose_L * 1000      # mL
@@ -600,18 +605,9 @@ server <- function(input, output, session) {
     mass_arabinose_mg <- mass_arabinose_ug / 1e3  # mg
     mass_glucose_mg <- mass_glucose_ug / 1e3       # mg
     
-    # Rhodamine WT with temperature correction
-    T_ref <- 25  # Reference temperature (°C)
-    T_measured <- input$water_temperature  # Measured water temperature (°C)
-    n_rhodamine <- input$rhodamine_temp_coeff  # Temperature coefficient (°C⁻¹)
-    
-    # Temperature correction factor (how much fluorescence changes from 25°C to stream temp)
-    temp_correction_factor <- exp(n_rhodamine * (T_measured - T_ref))
-    
-    # To get target_rhod_ppb at stream temperature, we need to inject mass that would 
-    # give target_rhod_ppb / temp_correction_factor at 25°C reference
-    target_rhod_at_ref <- target_rhod_ppb / temp_correction_factor
-    mass_rhodamine_pure_ug <- Q * target_rhod_at_ref * w_eff  # µg of pure rhodamine
+    # Rhodamine WT - calculate mass based on target true water concentration (same as arabinose/glucose)
+    # M = Q * C_target * W_eff
+    mass_rhodamine_pure_ug <- Q * target_rhod_ppb * w_eff  # µg of pure rhodamine
     
     # Account for rhodamine solution concentration
     rhodamine_conc_fraction <- input$rhodamine_concentration / 100  # Convert % to fraction
@@ -622,6 +618,15 @@ server <- function(input, output, session) {
     
     mass_rhodamine_pure_mg <- mass_rhodamine_pure_ug / 1e3  # mg pure
     mass_rhodamine_solution_mg <- mass_rhodamine_solution_ug / 1e3  # mg solution
+    
+    # Temperature information (informational only - does NOT affect injected mass)
+    T_ref <- 25  # Reference temperature (°C)
+    T_measured <- input$water_temperature  # Measured water temperature (°C)
+    n_rhodamine <- input$rhodamine_temp_coeff  # Temperature coefficient (°C⁻¹)
+    
+    # Expected fluorescence response factor relative to 25°C (informational only)
+    # This shows how sensor response will change with temperature, but does NOT modify injected mass
+    temp_response_factor <- exp(n_rhodamine * (T_measured - T_ref))
     
     # Store Q and intermediate calculation values
     calc_results$Q <- Q
@@ -640,14 +645,14 @@ server <- function(input, output, session) {
       mg = mass_arabinose_mg, 
       g = mass_arabinose_g,
       mL = volume_arabinose_mL,
-      stock_conc = arabinose_stock_conc
+      stock_conc_gL = arabinose_stock_conc_gL
     )
     calc_results$mass_glucose <- list(
       ug = mass_glucose_ug, 
       mg = mass_glucose_mg, 
       g = mass_glucose_g,
       mL = volume_glucose_mL,
-      stock_conc = glucose_stock_conc
+      stock_conc_gL = glucose_stock_conc_gL
     )
     calc_results$mass_rhodamine <- list(
       ug_pure = mass_rhodamine_pure_ug, 
@@ -659,9 +664,9 @@ server <- function(input, output, session) {
       concentration_pct = input$rhodamine_concentration,
       temperature = T_measured,
       temp_coeff = n_rhodamine,
-      temp_correction_factor = temp_correction_factor
+      temp_response_factor = temp_response_factor
     )
-    calc_results$temp_correction_factor <- temp_correction_factor
+    calc_results$temp_response_factor <- temp_response_factor
     
     # Calculate sampling times using CONCENTRATION-WEIGHTED spacing
     # Strategy (5 fixed samples):
@@ -837,7 +842,6 @@ server <- function(input, output, session) {
         <ol>
           <li>Inject a known mass of Rhodamine WT (M) into the stream</li>
           <li>Measure fluorescence over time downstream</li>
-          <li>Apply temperature correction for fluorescence</li>
           <li>Calculate discharge using the formula below</li>
         </ol>
         
@@ -854,13 +858,12 @@ server <- function(input, output, session) {
           <li><strong>dt</strong> = Time step between measurements [s]</li>
         </ul>
         
-        <h4>Temperature correction</h4>
-        <p>Rhodamine WT fluorescence is temperature-dependent:</p>
+        <h4>Important notes</h4>
         <ul>
-          <li>Fluorescence decreases ~2-3% per °C above 25°C</li>
-          <li>Correction factor: exp(n × (T - 25°C))</li>
-          <li>Default coefficient n = 0.026 °C⁻¹</li>
-          <li>All calculations are referenced to 25°C</li>
+          <li>This tab treats fluorescence values directly as concentration-equivalent input (ppb). <strong>No temperature correction is applied.</strong></li>
+          <li>If your fluorometer is not calibrated at stream temperature, you may need to account for temperature dependence externally.</li>
+          <li>Rhodamine WT fluorescence response is temperature-dependent (~2-3% per °C, coefficient n ≈ 0.026 °C⁻¹).</li>
+          <li>In the <strong>Injections</strong> tab, tracer masses are computed from target true water concentration — temperature dependence is reported as an informational response factor only.</li>
         </ul>
         
         <h4>Physical interpretation</h4>
@@ -986,18 +989,18 @@ server <- function(input, output, session) {
       p("Formula: M = Q × C_target × W_eff"),
       br(),
       p(strong(sprintf("ARABINOSE (Target: %d ppb):", input$target_arabinose))),
-      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f ppb)", 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
                        calc_results$mass_arabinose$mL, 
-                       calc_results$mass_arabinose$stock_conc)), 
+                       calc_results$mass_arabinose$stock_conc_gL)), 
         style = "margin-left: 20px;"),
       br(),
       p(strong(sprintf("GLUCOSE (Target: %d ppb):", input$target_glucose))),
-      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f ppb)", 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
                        calc_results$mass_glucose$mL, 
-                       calc_results$mass_glucose$stock_conc)), 
+                       calc_results$mass_glucose$stock_conc_gL)), 
         style = "margin-left: 20px;"),
       br(),
-      p(strong(sprintf("RHODAMINE WT (Target: %d ppb at %.1f°C stream temp):", input$target_rhodamine, input$water_temperature))),
+      p(strong(sprintf("RHODAMINE WT (Target: %d ppb):", input$target_rhodamine))),
       p(strong(sprintf("  → SOLUTION to add       = %.4f g", calc_results$mass_rhodamine$g_solution)), 
         style = "margin-left: 20px;"),
       br(),
@@ -1006,10 +1009,11 @@ server <- function(input, output, session) {
       p("if injected using the same method and at the same location as the"),
       p("salt slug, assuming similar hydraulic conditions."),
       br(),
-      p("For rhodamine:"),
-      p("  • Use the SOLUTION mass (accounts for concentration)"),
-      p("  • Mass is temperature-corrected for stream conditions"),
-      p("  • Target concentration achieved at actual stream temperature"),
+      p("Important:"),
+      p("  • All masses are based on target TRUE WATER CONCENTRATION (ppb)"),
+      p("  • Rhodamine SOLUTION mass accounts for commercial solution concentration"),
+      p(sprintf("  • Temperature dependence (%.1f°C): affects fluorescence response, NOT injected mass", input$water_temperature)),
+      p(sprintf("  • Expected fluorescence response factor at stream temp: %.4f (relative to 25°C)", calc_results$temp_response_factor)),
       p("═══════════════════════════════════════════════════════════════")
     )
   })
@@ -1290,38 +1294,63 @@ server <- function(input, output, session) {
         return()
       }
       
-      # Create summary header
-      header <- data.frame(
-        Parameter = c("Mass of Salt (g)", "Background Conductivity (µS/cm)", 
-                      "Time Step (s)", "Calibration Coefficient b", "Number of Measurements",
-                      "Discharge Q (L/s)", "Discharge Q (L/min)", "Discharge Q (m³/s)", "",
-                      "Effective Width W_eff (s)", "Peak Excess Conductivity (µS/cm)", 
-                      "Area Under Curve (µS·s/cm)", "",
-                      "Target Arabinose (ppb)", "Arabinose Stock Concentration (ppb)", 
-                      "Required Arabinose Volume (mL)", "Required Arabinose Mass (g)", "",
-                      "Target Glucose (ppb)", "Glucose Stock Concentration (ppb)",
-                      "Required Glucose Volume (mL)", "Required Glucose Mass (g)", "",
-                      "Target Rhodamine WT (ppb)", "Water Temperature (°C)", 
-                      "Rhodamine Temperature Coefficient (°C⁻¹)", "Temperature Correction Factor",
-                      "Rhodamine Solution Concentration (%)", 
-                      "Required Pure Rhodamine Mass (g)", "Required Rhodamine SOLUTION Mass (g)", ""),
-        Value = c(input$mass_salt, input$background_cond,
-                  input$time_step, sprintf("%.10f", calc_results$b), calc_results$count_cond,
-                  sprintf("%.6f", calc_results$Q), sprintf("%.6f", calc_results$Q * 60),
-                  sprintf("%.8f", calc_results$Q / 1000), "",
-                  sprintf("%.2f", calc_results$w_eff), sprintf("%.2f", calc_results$peak_excess),
-                  sprintf("%.2f", calc_results$area_under_curve), "",
-                  input$target_arabinose, sprintf("%.0f", calc_results$mass_arabinose$stock_conc),
-                  sprintf("%.2f", calc_results$mass_arabinose$mL), sprintf("%.6f", calc_results$mass_arabinose$g), "",
-                  input$target_glucose, sprintf("%.0f", calc_results$mass_glucose$stock_conc),
-                  sprintf("%.2f", calc_results$mass_glucose$mL), sprintf("%.6f", calc_results$mass_glucose$g), "",
-                  input$target_rhodamine, sprintf("%.1f", calc_results$mass_rhodamine$temperature),
-                  sprintf("%.3f", calc_results$mass_rhodamine$temp_coeff),
-                  sprintf("%.6f", calc_results$mass_rhodamine$temp_correction_factor),
-                  sprintf("%.2f", calc_results$mass_rhodamine$concentration_pct),
-                  sprintf("%.6f", calc_results$mass_rhodamine$g_pure),
-                  sprintf("%.6f", calc_results$mass_rhodamine$g_solution), "")
-      )
+      method <- calc_results$calculation_method
+      
+      # Select correct input fields based on workflow
+      if (method == "injections") {
+        salt_mass <- input$mass_salt_inj
+        bg_cond <- input$background_cond_inj
+        dt_val <- input$time_step_inj
+      } else if (method == "rhodamine") {
+        salt_mass <- input$mass_rhodamine_injected
+        bg_cond <- input$background_fluorescence
+        dt_val <- input$time_step_rho
+      } else {
+        salt_mass <- input$mass_salt
+        bg_cond <- input$background_cond
+        dt_val <- input$time_step
+      }
+      
+      # Common header rows (all workflows)
+      params <- c("Calculation Method", 
+                   "Mass of Tracer (g)", "Background (µS/cm or ppb)", 
+                   "Time Step (s)", "Calibration Coefficient b", "Number of Measurements",
+                   "Discharge Q (L/s)", "Discharge Q (L/min)", "Discharge Q (m³/s)", "",
+                   "Effective Width W_eff (s)", "Peak Excess (µS/cm or ppb)", 
+                   "Area Under Curve", "")
+      values <- c(method,
+                   salt_mass, bg_cond,
+                   dt_val, sprintf("%.10f", calc_results$b), calc_results$count_cond,
+                   sprintf("%.6f", calc_results$Q), sprintf("%.6f", calc_results$Q * 60),
+                   sprintf("%.8f", calc_results$Q / 1000), "",
+                   sprintf("%.2f", calc_results$w_eff), sprintf("%.2f", calc_results$peak_excess),
+                   sprintf("%.2f", calc_results$area_under_curve), "")
+      
+      # Append tracer mass rows only for Injections workflow
+      if (method == "injections" && !is.null(calc_results$mass_arabinose)) {
+        params <- c(params,
+                     "Target Arabinose (ppb)", "Arabinose Stock Concentration (g/L)", 
+                     "Required Arabinose Volume (mL)", "Required Arabinose Mass (g)", "",
+                     "Target Glucose (ppb)", "Glucose Stock Concentration (g/L)",
+                     "Required Glucose Volume (mL)", "Required Glucose Mass (g)", "",
+                     "Target Rhodamine WT (ppb)", "Water Temperature (°C)", 
+                     "Rhodamine Temperature Coefficient (°C⁻¹)", "Expected Fluorescence Response Factor (rel. to 25°C)",
+                     "Rhodamine Solution Concentration (%)", 
+                     "Required Pure Rhodamine Mass (g)", "Required Rhodamine SOLUTION Mass (g)", "")
+        values <- c(values,
+                     input$target_arabinose, sprintf("%.2f", calc_results$mass_arabinose$stock_conc_gL),
+                     sprintf("%.2f", calc_results$mass_arabinose$mL), sprintf("%.6f", calc_results$mass_arabinose$g), "",
+                     input$target_glucose, sprintf("%.2f", calc_results$mass_glucose$stock_conc_gL),
+                     sprintf("%.2f", calc_results$mass_glucose$mL), sprintf("%.6f", calc_results$mass_glucose$g), "",
+                     input$target_rhodamine, sprintf("%.1f", calc_results$mass_rhodamine$temperature),
+                     sprintf("%.3f", calc_results$mass_rhodamine$temp_coeff),
+                     sprintf("%.6f", calc_results$mass_rhodamine$temp_response_factor),
+                     sprintf("%.2f", calc_results$mass_rhodamine$concentration_pct),
+                     sprintf("%.6f", calc_results$mass_rhodamine$g_pure),
+                     sprintf("%.6f", calc_results$mass_rhodamine$g_solution), "")
+      }
+      
+      header <- data.frame(Parameter = params, Value = values)
       
       # Write to CSV
       write.csv(header, file, row.names = FALSE)
