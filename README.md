@@ -1,32 +1,27 @@
-# Tracer Tool - Stream Discharge & Tracer Mass Calculator
+# Tracer Tools - Stream Discharge & Field Sampling Timer
 
-A comprehensive Shiny web application for calculating stream discharge using salt dilution or Rhodamine WT methods, and for determining optimal tracer masses for stream metabolism studies.
+A comprehensive tool for stream discharge measurements and field sampling, consisting of:
+1. **R Shiny App** (`app.R`) - Calculate discharge and generate sampling schedules
+2. **Mobile Field Timer** (`field_timer.html`) - Progressive Web App for field sampling with offline support
 
-## Description
+## Files
+- `app.R` - R Shiny app for discharge calculations and sampling schedule generation
+- `field_timer.html` - Mobile timer PWA for field use
+- `manifest.json` - PWA manifest for installation
+- `service-worker.js` - Service worker for offline capability
 
-This tool provides three integrated workflows for stream hydrological measurements:
+---
 
-1. **Q_salt**: Calculate discharge from salt slug injection using conductivity measurements
-2. **Q_rhoWT**: Calculate discharge from Rhodamine WT injection using fluorescence measurements  
-3. **Injections**: Calculate required masses of arabinose, glucose, and Rhodamine WT tracers based on salt slug test results and target concentrations
+# Part 1: R Shiny App (app.R)
 
-The tool includes temperature correction for Rhodamine WT, effective width calculations, and sampling strategy recommendations for breakthrough curve analysis.
+## Features
 
-## Versions
-
-This repository contains two versions of the application:
-
-### app.R - Standard Version
-- Basic discharge calculations (Q_salt, Q_rhoWT, Injections)
-- Uniform sampling strategy
-- All core functionality
-
-### app2.R - Enhanced Version with Mobile Field Timer
-- **Non-uniform sampling strategy**: Denser sampling around peak, sparser at edges
-- **QR code generation**: Creates QR codes with sampling schedules
-- **Mobile field timer**: Standalone HTML app for Android/iOS
-- **Offline field use**: No internet required during sampling
-- All features from standard version
+- **Discharge calculations**: Q_salt, Q_rhoWT, and Injections methods
+- **Manual sampling point placement**: Click on plots to place sampling points where you want them
+- **Interactive plots**: Visualize breakthrough curves
+- **QR code generation**: Creates QR codes with sampling schedules for the mobile app
+- **Temperature correction**: Automatic Rhodamine WT fluorescence correction
+- **Data export**: Download results as CSV
 
 ## Installation
 
@@ -34,229 +29,110 @@ This repository contains two versions of the application:
 
 You need R installed on your system. Download from [CRAN](https://cran.r-project.org/).
 
-**For app.R:**
-```r
-install.packages(c("shiny", "DT", "ggplot2", "dplyr"))
-```
+### Install Required Packages
 
-**For app2.R (enhanced version):**
 ```r
 install.packages(c("shiny", "DT", "ggplot2", "dplyr", "qrcode", "jsonlite"))
 ```
 
-## Running the App
-
-### Option 1: From R/RStudio
+## Running the Shiny App
 
 ```r
 library(shiny)
-runApp()
+runApp("app.R")
 ```
-
-### Option 2: Using the run script
-
-```r
-source("run_app.R")
-```
-
-### Option 3: From Command Line
-
-```bash
-Rscript run_app.R
-```
-
-## Features
-
-- **Multiple discharge calculation methods**: Salt dilution and Rhodamine WT fluorescence
-- **Tracer mass calculator**: Determine optimal masses for arabinose, glucose, and Rhodamine WT
-- **Temperature correction**: Automatic Rhodamine WT fluorescence correction (2-3% per °C)
-- **Effective width calculation**: Based on breakthrough curve analysis
-- **Sampling strategy**: Recommended sampling times for breakthrough curves
-- **Interactive visualizations**: Real-time plots of conductivity/fluorescence and concentration
-- **Data export**: Download results and complete time series as CSV
-- **Comprehensive documentation**: Built-in methodology explanations
 
 ## How to Use
 
-### Workflow 1: Q_salt (Salt Dilution Discharge)
+### Workflow 1: Calculate Discharge (Q_salt or Q_rhoWT)
 
-1. Navigate to the **Q_salt** tab in the sidebar
-2. Enter your **Mass of Salt Added** (g)
-3. Enter **Background Conductivity** (µS/cm)
-4. Set the **Time Step** for your measurements (s)
-5. Paste your **Conductivity Timeseries** data (one value per line, or comma/space separated)
-6. Click **"Calculate Q from Salt"**
-7. View results in the main panel tabs (Results, Data Table, Plot, Method)
+1. Navigate to **Q_salt** or **Q_rhoWT** tab
+2. Enter your parameters (mass, background, time step, temperature)
+3. Paste your conductivity/fluorescence timeseries data
+4. Click **Calculate**
+5. View results and plots
 
-### Workflow 2: Q_rhoWT (Rhodamine WT Discharge)
+### Workflow 2: Calculate Tracer Masses (Injections)
 
-1. Navigate to the **Q_rhoWT** tab in the sidebar
-2. Enter **Mass of Rhodamine WT Injected** (g)
-3. Enter **Background Fluorescence** (RFU or ppb)
-4. Set the **Time Step** (s) and **Water Temperature** (°C)
-5. Paste your **Fluorescence Timeseries** data
-6. Click **"Calculate Q from Rhodamine"**
-7. Results include automatic temperature correction
+1. Navigate to **Injections** tab
+2. Enter salt slug test parameters
+3. Set target tracer concentrations
+4. Paste conductivity timeseries
+5. Click **Calculate Tracer Masses**
 
-### Workflow 3: Injections (Tracer Mass Calculator)
+### Workflow 3: Generate Sampling Schedule
 
-1. Navigate to the **Injections** tab in the sidebar
-2. Enter your salt slug test parameters:
-   - Mass of Salt Added (g)
-   - Background Conductivity (µS/cm)
-   - Time Step (s)
-   - Water Temperature (°C)
-3. Set your **Target Tracer Concentrations** (ppb):
-   - Target Arabinose Increase
-   - Target Glucose Increase
-   - Target Rhodamine WT Increase
-4. Paste your **Conductivity Timeseries** from the salt slug test
-5. Click **"Calculate Tracer Masses"**
-6. View required masses for each tracer, accounting for effective width and temperature
+1. After calculating in Injections tab, go to **Plot** tab
+2. **Click on the plots** to manually place sampling points where you want them
+3. Use **Clear All**, **Undo Last**, or **Auto-Suggest** buttons to adjust
+4. Go to **Sampling** tab to see:
+   - Your sampling schedule with times
+   - QR code for mobile app
+   - Copyable list of times
 
-### Settings Tab
+---
 
-Configure global parameters:
-- **Calibration Value** (1/b): Default 1915.89616, where b = (g/L)/(µS/cm)
-- **Rhodamine WT Solution Concentration** (%): Default 23.83%
-- **Rhodamine Temperature Coefficient** (°C⁻¹): Default 0.026
-- **Sampling Strategy**: Number of samples during breakthrough curve
+# Part 2: Mobile Field Timer (PWA)
 
-### Download Report
-Click **"Download Report (CSV)"** at any time to save your results and complete time series data.
+## Installation on Android/iOS
 
-### Workflow 4: Mobile Field Timer (app2.R only)
+### Method 1: Install as PWA (Recommended)
 
-**For field sampling with real-time guidance:**
+**Access the hosted app:**
+- Open Chrome (Android) or Safari (iOS)
+- Navigate to `https://ndeluigi.github.io/tracer-tools/field_timer.html`
+- Tap the menu (⋮ on Android, Share button on iOS) → **"Add to Home screen"** or **"Install app"**
+- The app will be installed and appear on your home screen
 
-1. Complete the **Injections** workflow in app2.R to calculate tracer masses
-2. Navigate to the **Sampling** tab
-3. You'll see:
-   - A QR code containing your sampling schedule
-   - A download button for the mobile timer app
-4. **On your phone:**
-   - Download `field_timer.html` (or open it directly if already downloaded)
-   - Open the HTML file in your mobile browser
-   - Tap "Scan QR Code" and scan the QR code from the R app
-5. **In the field:**
-   - Review the loaded sampling schedule
-   - Tap "Start Timer" when you inject the tracer
-   - The app will count down to each sampling time
-   - Visual and audio alerts when it's time to sample
-   - Mark each sample as taken
-   - Works completely offline!
+**Use the installed app:**
+- Tap the app icon on your home screen
+- The app runs in standalone mode
+- Works offline after first load
 
-**Mobile Timer Features:**
-- Real-time countdown to next sample
-- Audio beeps at 10 seconds and when sampling time arrives
-- Visual alerts (color changes) when approaching sample time
-- Progress tracking
-- Screen stays awake during sampling
-- No internet connection required
+## Camera Permissions
 
-## Methodology
+**Android:**
+- Once installed as PWA, Chrome will ask for camera permission
+- Grant permission once, and it's remembered
+- If blocked, use your phone's built-in Camera app to scan QR codes, then manually enter the times
 
-### Salt Dilution Method
+**iOS:**
+- iOS does not allow installed web apps to access the camera
+- Use your iPhone's built-in Camera app to scan QR codes
+- Copy the numbers and use "Enter Schedule Manually" in the app
 
-Calculate discharge from a known mass of salt injected into the stream:
+## Features
 
-**Formula:**
-```
-Q = M / ((SUM(conductivity) - background × COUNT(conductivity)) × b × dt)
-```
+- **QR Code Scanner**: Scan QR codes from the Shiny app to load sampling schedules (Android only when installed)
+- **Manual Input**: Enter sampling times manually (one per line in seconds) - works on all platforms
+- **Timer**: Visual countdown with audio alerts
+- **Save Results**: Export sampling data as CSV with timestamps and injection name
+- **Offline**: Works offline after first installation
 
-**Where:**
-- **Q** = Discharge [L/s]
-- **M** = Mass of salt injected [g]
-- **SUM(conductivity)** = Sum of all conductivity measurements [µS/cm]
-- **background** = Background conductivity [µS/cm]
-- **COUNT(conductivity)** = Number of measurements
-- **b** = Calibration coefficient [(g/L)/(µS/cm)]
-- **dt** = Time step between measurements [s]
+## Generating Sampling Schedules
 
-### Rhodamine WT Method
-
-Calculate discharge from a known mass of Rhodamine WT with temperature correction:
-
-**Formula:**
-```
-Q = M / ((SUM(fluorescence) - background × COUNT(fluorescence)) × dt)
-```
-
-**Temperature Correction:**
-- Fluorescence decreases ~2-3% per °C above 25°C
-- Correction factor: `exp(n × (T - 25°C))` where n = 0.026 °C⁻¹
-- All calculations referenced to 25°C
-
-### Tracer Mass Calculation
-
-Calculate required tracer masses based on effective width:
-
-**Formula:**
-```
-M = Q × C_target × W_eff
-```
-
-**Where:**
-- **M** = Required tracer mass [µg]
-- **Q** = Discharge from salt slug test [L/s]
-- **C_target** = Target concentration increase [ppb = µg/L]
-- **W_eff** = Effective width [s] = Area under curve / Peak excess
-
-## Files in This Repository
-
-### Core Application
-- `app.R` - Main Shiny application with all three workflows
-- `run_app.R` - Convenience script to launch the app
-
-### Documentation
-- `README.md` - This file
-- `INSTALLATION_GUIDE.md` - Detailed installation instructions
-- `APP_STRUCTURE.md` - Application architecture documentation
-- `DISCHARGE_CALCULATION_EXPLAINED.md` - Detailed calculation methodology
-- `TRACER_MASS_CALCULATION.md` - Tracer mass calculation details
-- `RHODAMINE_TEMPERATURE_CORRECTION.md` - Temperature correction methodology
-- `SAMPLING_STRATEGY.md` - Sampling frequency recommendations
-- `WORKFLOW_SUMMARY.md` - Overview of all workflows
-- `STANDALONE_INSTRUCTIONS.md` - Instructions for creating standalone version
-
-### Data Files
-- `Q_measurement_salt_inj.xlsx` - Example Excel file with measurements
-- `with_salt_data.csv` - Example salt measurement data
-- `with_rhodamine_data.csv` - Example rhodamine measurement data
-
-### Utilities
-- `create_standalone.R` - Script to create standalone executable
-- `make_portable.R` - Script to create portable version
-- Various Python scripts for data analysis and verification
+Use `app.R` in R/RStudio:
+1. Calculate discharge and breakthrough curve
+2. Click on plots to manually place sampling points
+3. Go to Sampling tab to get QR code
+4. Scan QR code with your phone's built-in camera app
+5. Copy the numbers and paste into the timer app using "Enter Schedule Manually"
 
 ## Troubleshooting
 
-### App won't start
-- Make sure all required packages are installed
-- Check that you're running the command from the correct directory
+**Camera not working?**
+- **iOS**: Camera is not supported in installed web apps - use built-in Camera app + manual input
+- **Android**: Make sure you installed as PWA (not just bookmarked)
+- Check Chrome Settings → Site Settings → Camera → Allow
+- Try reloading the app
+- **Workaround for both**: Use phone's built-in Camera app to scan QR, then manually enter times
 
-### "Invalid conductivity data" error
-- Ensure your data contains only numeric values
-- Check for any non-numeric characters in your paste
-- Make sure values are separated by newlines, commas, or spaces
+**Can't install as PWA?**
+- Make sure you're accessing via HTTPS (GitHub Pages URL)
+- Chrome/Safari must detect the manifest.json and service-worker.js
+- Check browser console for errors
 
-### Discharge seems incorrect
-- Verify the calibration coefficient
-- Check that background conductivity is correct
-- Ensure time step matches your data collection interval
-- Confirm mass of salt is in grams
-
-### Q value not updating in Injections tab
-- This was a known issue that has been fixed
-- Make sure you're using the latest version of app.R
-- The Q value now updates correctly when changing salt mass
-
-## Use Cases
-
-This tool is designed for:
-- **Stream metabolism studies**: Calculate optimal tracer masses for arabinose and glucose injections
-- **Discharge measurements**: Quick and accurate stream discharge calculations
-- **Hydrological surveys**: Multiple measurement methods in one tool
-- **Field work planning**: Determine tracer requirements before field deployment
-- **Data analysis**: Process and visualize breakthrough curves
+**App not working offline?**
+- Visit the app at least once while online
+- Service worker needs to cache resources first
+- Check if service worker is registered in browser DevTools
