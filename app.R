@@ -162,6 +162,22 @@ ui <- fluidPage(
                            
                            hr(),
                            
+                           h4("Stock solution concentrations"),
+                           numericInput("arabinose_stock_conc", 
+                                        "Arabinose Stock Solution Concentration (ppb)", 
+                                        value = 1000000, 
+                                        min = 0,
+                                        step = 1000),
+                           numericInput("glucose_stock_conc", 
+                                        "Glucose Stock Solution Concentration (ppb)", 
+                                        value = 1000000, 
+                                        min = 0,
+                                        step = 1000),
+                           helpText("Stock solution concentrations for field application."),
+                           helpText("Output will show mL of stock solution to add instead of grams of powder."),
+                           
+                           hr(),
+                           
                            h4("Sampling strategy"),
                            numericInput("n_samples_breakthrough", 
                                         "Samples During Breakthrough Curve", 
@@ -566,6 +582,24 @@ server <- function(input, output, session) {
     mass_arabinose_ug <- Q * target_arab_ppb * w_eff  # µg
     mass_glucose_ug <- Q * target_gluc_ppb * w_eff    # µg
     
+    # Calculate mL of stock solution needed for arabinose and glucose
+    # Volume (L) = mass (µg) / concentration (µg/L)
+    # Volume (mL) = Volume (L) * 1000
+    arabinose_stock_conc <- input$arabinose_stock_conc  # ppb = µg/L
+    glucose_stock_conc <- input$glucose_stock_conc      # ppb = µg/L
+    
+    volume_arabinose_L <- mass_arabinose_ug / arabinose_stock_conc  # L
+    volume_glucose_L <- mass_glucose_ug / glucose_stock_conc        # L
+    
+    volume_arabinose_mL <- volume_arabinose_L * 1000  # mL
+    volume_glucose_mL <- volume_glucose_L * 1000      # mL
+    
+    # Keep mass calculations for reference
+    mass_arabinose_g <- mass_arabinose_ug / 1e6  # g
+    mass_glucose_g <- mass_glucose_ug / 1e6       # g
+    mass_arabinose_mg <- mass_arabinose_ug / 1e3  # mg
+    mass_glucose_mg <- mass_glucose_ug / 1e3       # mg
+    
     # Rhodamine WT with temperature correction
     T_ref <- 25  # Reference temperature (°C)
     T_measured <- input$water_temperature  # Measured water temperature (°C)
@@ -583,13 +617,9 @@ server <- function(input, output, session) {
     rhodamine_conc_fraction <- input$rhodamine_concentration / 100  # Convert % to fraction
     mass_rhodamine_solution_ug <- mass_rhodamine_pure_ug / rhodamine_conc_fraction  # µg of solution needed
     
-    mass_arabinose_g <- mass_arabinose_ug / 1e6  # g
-    mass_glucose_g <- mass_glucose_ug / 1e6       # g
     mass_rhodamine_pure_g <- mass_rhodamine_pure_ug / 1e6  # g pure rhodamine
     mass_rhodamine_solution_g <- mass_rhodamine_solution_ug / 1e6  # g of solution
     
-    mass_arabinose_mg <- mass_arabinose_ug / 1e3  # mg
-    mass_glucose_mg <- mass_glucose_ug / 1e3       # mg
     mass_rhodamine_pure_mg <- mass_rhodamine_pure_ug / 1e3  # mg pure
     mass_rhodamine_solution_mg <- mass_rhodamine_solution_ug / 1e3  # mg solution
     
@@ -605,8 +635,20 @@ server <- function(input, output, session) {
     calc_results$w_eff <- w_eff
     
     # Store tracer mass results
-    calc_results$mass_arabinose <- list(ug = mass_arabinose_ug, mg = mass_arabinose_mg, g = mass_arabinose_g)
-    calc_results$mass_glucose <- list(ug = mass_glucose_ug, mg = mass_glucose_mg, g = mass_glucose_g)
+    calc_results$mass_arabinose <- list(
+      ug = mass_arabinose_ug, 
+      mg = mass_arabinose_mg, 
+      g = mass_arabinose_g,
+      mL = volume_arabinose_mL,
+      stock_conc = arabinose_stock_conc
+    )
+    calc_results$mass_glucose <- list(
+      ug = mass_glucose_ug, 
+      mg = mass_glucose_mg, 
+      g = mass_glucose_g,
+      mL = volume_glucose_mL,
+      stock_conc = glucose_stock_conc
+    )
     calc_results$mass_rhodamine <- list(
       ug_pure = mass_rhodamine_pure_ug, 
       mg_pure = mass_rhodamine_pure_mg, 
@@ -944,11 +986,15 @@ server <- function(input, output, session) {
       p("Formula: M = Q × C_target × W_eff"),
       br(),
       p(strong(sprintf("ARABINOSE (Target: %d ppb):", input$target_arabinose))),
-      p(strong(sprintf("  Required mass = %.4f g", calc_results$mass_arabinose$g)), 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f ppb)", 
+                       calc_results$mass_arabinose$mL, 
+                       calc_results$mass_arabinose$stock_conc)), 
         style = "margin-left: 20px;"),
       br(),
       p(strong(sprintf("GLUCOSE (Target: %d ppb):", input$target_glucose))),
-      p(strong(sprintf("  Required mass = %.4f g", calc_results$mass_glucose$g)), 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f ppb)", 
+                       calc_results$mass_glucose$mL, 
+                       calc_results$mass_glucose$stock_conc)), 
         style = "margin-left: 20px;"),
       br(),
       p(strong(sprintf("RHODAMINE WT (Target: %d ppb at %.1f°C stream temp):", input$target_rhodamine, input$water_temperature))),
@@ -1251,8 +1297,10 @@ server <- function(input, output, session) {
                       "Discharge Q (L/s)", "Discharge Q (L/min)", "Discharge Q (m³/s)", "",
                       "Effective Width W_eff (s)", "Peak Excess Conductivity (µS/cm)", 
                       "Area Under Curve (µS·s/cm)", "",
-                      "Target Arabinose (ppb)", "Required Arabinose Mass (g)", "",
-                      "Target Glucose (ppb)", "Required Glucose Mass (g)", "",
+                      "Target Arabinose (ppb)", "Arabinose Stock Concentration (ppb)", 
+                      "Required Arabinose Volume (mL)", "Required Arabinose Mass (g)", "",
+                      "Target Glucose (ppb)", "Glucose Stock Concentration (ppb)",
+                      "Required Glucose Volume (mL)", "Required Glucose Mass (g)", "",
                       "Target Rhodamine WT (ppb)", "Water Temperature (°C)", 
                       "Rhodamine Temperature Coefficient (°C⁻¹)", "Temperature Correction Factor",
                       "Rhodamine Solution Concentration (%)", 
@@ -1263,8 +1311,10 @@ server <- function(input, output, session) {
                   sprintf("%.8f", calc_results$Q / 1000), "",
                   sprintf("%.2f", calc_results$w_eff), sprintf("%.2f", calc_results$peak_excess),
                   sprintf("%.2f", calc_results$area_under_curve), "",
-                  input$target_arabinose, sprintf("%.6f", calc_results$mass_arabinose$g), "",
-                  input$target_glucose, sprintf("%.6f", calc_results$mass_glucose$g), "",
+                  input$target_arabinose, sprintf("%.0f", calc_results$mass_arabinose$stock_conc),
+                  sprintf("%.2f", calc_results$mass_arabinose$mL), sprintf("%.6f", calc_results$mass_arabinose$g), "",
+                  input$target_glucose, sprintf("%.0f", calc_results$mass_glucose$stock_conc),
+                  sprintf("%.2f", calc_results$mass_glucose$mL), sprintf("%.6f", calc_results$mass_glucose$g), "",
                   input$target_rhodamine, sprintf("%.1f", calc_results$mass_rhodamine$temperature),
                   sprintf("%.3f", calc_results$mass_rhodamine$temp_coeff),
                   sprintf("%.6f", calc_results$mass_rhodamine$temp_correction_factor),
