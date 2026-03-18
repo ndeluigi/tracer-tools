@@ -12,3 +12,6 @@
 !run_app.bat
 !run_app.sh
 !PORTABLE_SETUP.md
+
+# User-specific config (exclude)
+r_path.txt
