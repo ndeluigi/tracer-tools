@@ -105,6 +105,10 @@ ui <- fluidPage(
                            hr(),
                            
                            h4("Target tracer concentrations"),
+                           checkboxInput("cnp_balance",
+                                         "Auto-balance C:N:P at 60:15:1 (DOC +100 ppb via glucose)",
+                                         value = FALSE),
+                           helpText("When enabled: glucose target set to 100 ppb (DOC source). PO4 and NO3 targets are computed so the FINAL water concentration respects C:N:P = 60:15:1 using background values from Settings. Negative additions are clamped to 0."),
                            numericInput("target_arabinose", 
                                         "Target Arabinose Increase (ppb)", 
                                         value = 100, 
@@ -193,6 +197,26 @@ ui <- fluidPage(
                                         step = 1000),
                            helpText("Stock solution concentrations for field application."),
                            helpText("Output will show mL of stock solution to add instead of grams of powder."),
+                           
+                           hr(),
+                           
+                           h4("Background stream concentrations"),
+                           numericInput("background_doc", 
+                                        "Background DOC (ppb)", 
+                                        value = 500, 
+                                        min = 0,
+                                        step = 10),
+                           numericInput("background_po4", 
+                                        "Background SRP-P (ppb)", 
+                                        value = 2, 
+                                        min = 0,
+                                        step = 1),
+                           numericInput("background_no3", 
+                                        "Background NO3-N (ppb)", 
+                                        value = 125, 
+                                        min = 0,
+                                        step = 10),
+                           helpText("Used to compute CNP-balanced injection if enabled in Injections tab."),
                            
                            hr(),
                            
@@ -292,6 +316,26 @@ server <- function(input, output, session) {
   
   # Reactive value to store manually clicked sampling times (in minutes)
   manual_samples_min <- reactiveVal(numeric(0))
+  
+  # Auto-balance C:N:P (60:15:1) on FINAL water concentration when checkbox is enabled
+  # Glucose target = 100 ppb (DOC source). Compute NO3/PO4 additions to satisfy ratio.
+  observe({
+    if (isTRUE(input$cnp_balance)) {
+      bg_doc <- input$background_doc
+      bg_po4 <- input$background_po4
+      bg_no3 <- input$background_no3
+      doc_add <- 100  # ppb DOC added via glucose
+      final_doc <- bg_doc + doc_add
+      # C:N:P = 60:15:1  =>  N_final = DOC_final * 15/60, P_final = DOC_final * 1/60
+      final_no3 <- final_doc * 15 / 60
+      final_po4 <- final_doc * 1 / 60
+      add_no3  <- max(0, final_no3 - bg_no3)
+      add_po4  <- max(0, final_po4 - bg_po4)
+      updateNumericInput(session, "target_glucose", value = doc_add)
+      updateNumericInput(session, "target_no3",     value = round(add_no3, 2))
+      updateNumericInput(session, "target_po4",     value = round(add_po4, 2))
+    }
+  })
   
   # Snap a clicked x value to the nearest data point
   snap_to_data <- function(click_x) {
