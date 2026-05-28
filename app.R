@@ -117,6 +117,14 @@ ui <- fluidPage(
                                         "Target Rhodamine WT Increase (ppb)", 
                                         value = 30, 
                                         min = 0),
+                           numericInput("target_po4", 
+                                        "Target PO4 Increase (ppb)", 
+                                        value = 70, 
+                                        min = 0),
+                           numericInput("target_no3", 
+                                        "Target NO3 Increase (ppb)", 
+                                        value = 1000, 
+                                        min = 0),
                            helpText("ppb = µg/L. Mass will be calculated based on effective width."),
                            
                            hr(),
@@ -173,6 +181,16 @@ ui <- fluidPage(
                                         value = 200, 
                                         min = 0,
                                         step = 10),
+                           numericInput("po4_stock_conc", 
+                                        "PO4 Stock Solution Concentration (g/L)", 
+                                        value = 1, 
+                                        min = 0,
+                                        step = 0.1),
+                           numericInput("no3_stock_conc", 
+                                        "NO3 Stock Solution Concentration (g/L)", 
+                                        value = 1, 
+                                        min = 0,
+                                        step = 0.1),
                            helpText("Stock solution concentrations for field application."),
                            helpText("Output will show mL of stock solution to add instead of grams of powder."),
                            
@@ -261,6 +279,8 @@ server <- function(input, output, session) {
     mass_arabinose = NULL,
     mass_glucose = NULL,
     mass_rhodamine = NULL,
+    mass_po4 = NULL,
+    mass_no3 = NULL,
     temp_response_factor = NULL,
     sampling_times = NULL,
     sampling_indices = NULL,
@@ -435,6 +455,8 @@ server <- function(input, output, session) {
     calc_results$mass_arabinose <- NULL
     calc_results$mass_glucose <- NULL
     calc_results$mass_rhodamine <- NULL
+    calc_results$mass_po4 <- NULL
+    calc_results$mass_no3 <- NULL
     calc_results$temp_response_factor <- NULL
     
     # Clear sampling times (not calculated in Q_salt)
@@ -520,6 +542,8 @@ server <- function(input, output, session) {
     calc_results$mass_arabinose <- NULL
     calc_results$mass_glucose <- NULL
     calc_results$mass_rhodamine <- NULL
+    calc_results$mass_po4 <- NULL
+    calc_results$mass_no3 <- NULL
     calc_results$temp_response_factor <- NULL
     
     # Clear sampling times (not calculated in Q_rhoWT)
@@ -619,6 +643,25 @@ server <- function(input, output, session) {
     mass_rhodamine_pure_mg <- mass_rhodamine_pure_ug / 1e3  # mg pure
     mass_rhodamine_solution_mg <- mass_rhodamine_solution_ug / 1e3  # mg solution
     
+    # PO4 and NO3 - same formula as arabinose/glucose
+    target_po4_ppb <- input$target_po4  # µg/L
+    target_no3_ppb <- input$target_no3  # µg/L
+    
+    mass_po4_ug <- Q * target_po4_ppb * w_eff  # µg
+    mass_no3_ug <- Q * target_no3_ppb * w_eff  # µg
+    
+    po4_stock_conc_gL <- input$po4_stock_conc  # g/L
+    no3_stock_conc_gL <- input$no3_stock_conc  # g/L
+    
+    po4_stock_conc_ppb <- po4_stock_conc_gL * 1e6  # µg/L
+    no3_stock_conc_ppb <- no3_stock_conc_gL * 1e6  # µg/L
+    
+    volume_po4_mL <- (mass_po4_ug / po4_stock_conc_ppb) * 1000  # mL
+    volume_no3_mL <- (mass_no3_ug / no3_stock_conc_ppb) * 1000  # mL
+    
+    mass_po4_g  <- mass_po4_ug / 1e6
+    mass_no3_g  <- mass_no3_ug / 1e6
+    
     # Temperature information (informational only - does NOT affect injected mass)
     T_ref <- 25  # Reference temperature (°C)
     T_measured <- input$water_temperature  # Measured water temperature (°C)
@@ -667,6 +710,18 @@ server <- function(input, output, session) {
       temp_response_factor = temp_response_factor
     )
     calc_results$temp_response_factor <- temp_response_factor
+    calc_results$mass_po4 <- list(
+      ug = mass_po4_ug,
+      g = mass_po4_g,
+      mL = volume_po4_mL,
+      stock_conc_gL = po4_stock_conc_gL
+    )
+    calc_results$mass_no3 <- list(
+      ug = mass_no3_ug,
+      g = mass_no3_g,
+      mL = volume_no3_mL,
+      stock_conc_gL = no3_stock_conc_gL
+    )
     
     # Calculate sampling times using CONCENTRATION-WEIGHTED spacing
     # Strategy (5 fixed samples):
@@ -881,7 +936,9 @@ server <- function(input, output, session) {
   output$show_tracer_masses <- reactive({
     !is.null(calc_results$mass_arabinose) && 
       !is.null(calc_results$mass_glucose) && 
-      !is.null(calc_results$mass_rhodamine)
+      !is.null(calc_results$mass_rhodamine) &&
+      !is.null(calc_results$mass_po4) &&
+      !is.null(calc_results$mass_no3)
   })
   outputOptions(output, "show_tracer_masses", suspendWhenHidden = FALSE)
   
@@ -1002,6 +1059,18 @@ server <- function(input, output, session) {
       br(),
       p(strong(sprintf("RHODAMINE WT (Target: %d ppb):", input$target_rhodamine))),
       p(strong(sprintf("  → SOLUTION to add       = %.4f g", calc_results$mass_rhodamine$g_solution)), 
+        style = "margin-left: 20px;"),
+      br(),
+      p(strong(sprintf("PO4 (Target: %d ppb):", input$target_po4))),
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
+                       calc_results$mass_po4$mL, 
+                       calc_results$mass_po4$stock_conc_gL)), 
+        style = "margin-left: 20px;"),
+      br(),
+      p(strong(sprintf("NO3 (Target: %d ppb):", input$target_no3))),
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
+                       calc_results$mass_no3$mL, 
+                       calc_results$mass_no3$stock_conc_gL)), 
         style = "margin-left: 20px;"),
       br(),
       p("═══════════════════════════════════════════════════════════════"),
@@ -1336,7 +1405,11 @@ server <- function(input, output, session) {
                      "Target Rhodamine WT (ppb)", "Water Temperature (°C)", 
                      "Rhodamine Temperature Coefficient (°C⁻¹)", "Expected Fluorescence Response Factor (rel. to 25°C)",
                      "Rhodamine Solution Concentration (%)", 
-                     "Required Pure Rhodamine Mass (g)", "Required Rhodamine SOLUTION Mass (g)", "")
+                     "Required Pure Rhodamine Mass (g)", "Required Rhodamine SOLUTION Mass (g)", "",
+                     "Target PO4 (ppb)", "PO4 Stock Concentration (g/L)",
+                     "Required PO4 Volume (mL)", "Required PO4 Mass (g)", "",
+                     "Target NO3 (ppb)", "NO3 Stock Concentration (g/L)",
+                     "Required NO3 Volume (mL)", "Required NO3 Mass (g)", "")
         values <- c(values,
                      input$target_arabinose, sprintf("%.2f", calc_results$mass_arabinose$stock_conc_gL),
                      sprintf("%.2f", calc_results$mass_arabinose$mL), sprintf("%.6f", calc_results$mass_arabinose$g), "",
@@ -1347,7 +1420,11 @@ server <- function(input, output, session) {
                      sprintf("%.6f", calc_results$mass_rhodamine$temp_response_factor),
                      sprintf("%.2f", calc_results$mass_rhodamine$concentration_pct),
                      sprintf("%.6f", calc_results$mass_rhodamine$g_pure),
-                     sprintf("%.6f", calc_results$mass_rhodamine$g_solution), "")
+                     sprintf("%.6f", calc_results$mass_rhodamine$g_solution), "",
+                     input$target_po4, sprintf("%.2f", calc_results$mass_po4$stock_conc_gL),
+                     sprintf("%.2f", calc_results$mass_po4$mL), sprintf("%.6f", calc_results$mass_po4$g), "",
+                     input$target_no3, sprintf("%.2f", calc_results$mass_no3$stock_conc_gL),
+                     sprintf("%.2f", calc_results$mass_no3$mL), sprintf("%.6f", calc_results$mass_no3$g), "")
       }
       
       header <- data.frame(Parameter = params, Value = values)
