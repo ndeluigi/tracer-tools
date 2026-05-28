@@ -182,15 +182,15 @@ ui <- fluidPage(
                                         min = 0,
                                         step = 10),
                            numericInput("po4_stock_conc", 
-                                        "PO4 Stock Solution Concentration (g/L)", 
-                                        value = 1, 
+                                        "PO4 Stock Solution Concentration (mg/L)", 
+                                        value = 1000, 
                                         min = 0,
-                                        step = 0.1),
+                                        step = 100),
                            numericInput("no3_stock_conc", 
-                                        "NO3 Stock Solution Concentration (g/L)", 
-                                        value = 1, 
+                                        "NO3 Stock Solution Concentration (mg/L)", 
+                                        value = 1000, 
                                         min = 0,
-                                        step = 0.1),
+                                        step = 100),
                            helpText("Stock solution concentrations for field application."),
                            helpText("Output will show mL of stock solution to add instead of grams of powder."),
                            
@@ -650,11 +650,11 @@ server <- function(input, output, session) {
     mass_po4_ug <- Q * target_po4_ppb * w_eff  # µg
     mass_no3_ug <- Q * target_no3_ppb * w_eff  # µg
     
-    po4_stock_conc_gL <- input$po4_stock_conc  # g/L
-    no3_stock_conc_gL <- input$no3_stock_conc  # g/L
+    po4_stock_conc_mgL <- input$po4_stock_conc  # mg/L
+    no3_stock_conc_mgL <- input$no3_stock_conc  # mg/L
     
-    po4_stock_conc_ppb <- po4_stock_conc_gL * 1e6  # µg/L
-    no3_stock_conc_ppb <- no3_stock_conc_gL * 1e6  # µg/L
+    po4_stock_conc_ppb <- po4_stock_conc_mgL * 1e3  # µg/L (1 mg/L = 1000 µg/L)
+    no3_stock_conc_ppb <- no3_stock_conc_mgL * 1e3  # µg/L
     
     volume_po4_mL <- (mass_po4_ug / po4_stock_conc_ppb) * 1000  # mL
     volume_no3_mL <- (mass_no3_ug / no3_stock_conc_ppb) * 1000  # mL
@@ -714,13 +714,13 @@ server <- function(input, output, session) {
       ug = mass_po4_ug,
       g = mass_po4_g,
       mL = volume_po4_mL,
-      stock_conc_gL = po4_stock_conc_gL
+      stock_conc_mgL = po4_stock_conc_mgL
     )
     calc_results$mass_no3 <- list(
       ug = mass_no3_ug,
       g = mass_no3_g,
       mL = volume_no3_mL,
-      stock_conc_gL = no3_stock_conc_gL
+      stock_conc_mgL = no3_stock_conc_mgL
     )
     
     # Calculate sampling times using CONCENTRATION-WEIGHTED spacing
@@ -1062,15 +1062,15 @@ server <- function(input, output, session) {
         style = "margin-left: 20px;"),
       br(),
       p(strong(sprintf("PO4 (Target: %d ppb):", input$target_po4))),
-      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f mg/L)", 
                        calc_results$mass_po4$mL, 
-                       calc_results$mass_po4$stock_conc_gL)), 
+                       calc_results$mass_po4$stock_conc_mgL)), 
         style = "margin-left: 20px;"),
       br(),
       p(strong(sprintf("NO3 (Target: %d ppb):", input$target_no3))),
-      p(strong(sprintf("  → Add %.2f mL of stock solution (%.2f g/L)", 
+      p(strong(sprintf("  → Add %.2f mL of stock solution (%.0f mg/L)", 
                        calc_results$mass_no3$mL, 
-                       calc_results$mass_no3$stock_conc_gL)), 
+                       calc_results$mass_no3$stock_conc_mgL)), 
         style = "margin-left: 20px;"),
       br(),
       p("═══════════════════════════════════════════════════════════════"),
@@ -1406,9 +1406,9 @@ server <- function(input, output, session) {
                      "Rhodamine Temperature Coefficient (°C⁻¹)", "Expected Fluorescence Response Factor (rel. to 25°C)",
                      "Rhodamine Solution Concentration (%)", 
                      "Required Pure Rhodamine Mass (g)", "Required Rhodamine SOLUTION Mass (g)", "",
-                     "Target PO4 (ppb)", "PO4 Stock Concentration (g/L)",
+                     "Target PO4 (ppb)", "PO4 Stock Concentration (mg/L)",
                      "Required PO4 Volume (mL)", "Required PO4 Mass (g)", "",
-                     "Target NO3 (ppb)", "NO3 Stock Concentration (g/L)",
+                     "Target NO3 (ppb)", "NO3 Stock Concentration (mg/L)",
                      "Required NO3 Volume (mL)", "Required NO3 Mass (g)", "")
         values <- c(values,
                      input$target_arabinose, sprintf("%.2f", calc_results$mass_arabinose$stock_conc_gL),
@@ -1421,9 +1421,9 @@ server <- function(input, output, session) {
                      sprintf("%.2f", calc_results$mass_rhodamine$concentration_pct),
                      sprintf("%.6f", calc_results$mass_rhodamine$g_pure),
                      sprintf("%.6f", calc_results$mass_rhodamine$g_solution), "",
-                     input$target_po4, sprintf("%.2f", calc_results$mass_po4$stock_conc_gL),
+                     input$target_po4, sprintf("%.0f", calc_results$mass_po4$stock_conc_mgL),
                      sprintf("%.2f", calc_results$mass_po4$mL), sprintf("%.6f", calc_results$mass_po4$g), "",
-                     input$target_no3, sprintf("%.2f", calc_results$mass_no3$stock_conc_gL),
+                     input$target_no3, sprintf("%.0f", calc_results$mass_no3$stock_conc_mgL),
                      sprintf("%.2f", calc_results$mass_no3$mL), sprintf("%.6f", calc_results$mass_no3$g), "")
       }
       
